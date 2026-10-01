@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from mcpauth import views as oauth
 from mcpserver.views import McpView
 from timetracking.views import TimerView
 from tasks.discussion import PublicConfigView
@@ -13,6 +14,22 @@ urlpatterns = [
     path("api/auth/", include("accounts.urls")),
     path("api/admin/", include("instance.urls")),
     path("api/mcp/", McpView.as_view(), name="mcp"),
+    path("api/mcp", McpView.as_view()),
+    path("api/mcp/w/<int:workspace_id>/", McpView.as_view(), name="mcp-workspace"),
+    path("api/mcp/w/<int:workspace_id>", McpView.as_view()),
+    path("api/workspaces/<int:ws>/mcp-tokens/", oauth.WorkspaceTokensView.as_view(), name="workspace-mcp-tokens"),
+    path("api/workspaces/<int:ws>/mcp-tokens/<int:pk>/", oauth.WorkspaceTokensView.as_view(), name="workspace-mcp-token"),
+    path(".well-known/oauth-protected-resource", oauth.ProtectedResourceMetadata.as_view()),
+    path(".well-known/oauth-protected-resource/<path:path>", oauth.ProtectedResourceMetadata.as_view()),
+    path(".well-known/oauth-authorization-server", oauth.AuthorizationServerMetadata.as_view()),
+    path(".well-known/oauth-authorization-server/<path:path>", oauth.AuthorizationServerMetadata.as_view()),
+    path(".well-known/openid-configuration", oauth.AuthorizationServerMetadata.as_view()),
+    path("api/oauth/register", oauth.RegisterView.as_view(), name="oauth-register"),
+    path("api/oauth/token", oauth.TokenView.as_view(), name="oauth-token"),
+    path("api/oauth/revoke", oauth.RevokeView.as_view(), name="oauth-revoke"),
+    path("api/oauth/authorize/", oauth.AuthorizeView.as_view(), name="oauth-authorize"),
+    path("api/oauth/grants/", oauth.GrantsView.as_view(), name="oauth-grants"),
+    path("api/oauth/grants/<int:pk>/", oauth.GrantsView.as_view(), name="oauth-grant"),
     path("mcp", McpView.as_view()),
     path("api/config/", PublicConfigView.as_view(), name="public-config"),
     path("api/t/<str:ref>/", TaskLinkView.as_view(), name="task-link"),

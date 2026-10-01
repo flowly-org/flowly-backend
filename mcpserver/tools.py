@@ -39,15 +39,15 @@ def register(name, title, description, parameters, handler, read_only=False):
     EXTRA[name] = handler
 
 
-def run_tool(user, name: str, arguments: dict) -> tuple[str, bool]:
-    """Returns (text, is_error)."""
+def run_tool(user, name: str, arguments: dict, scope=None) -> tuple[str, bool]:
+    """Returns (text, is_error). `scope` limits everything to one workspace (workspace endpoints)."""
     if name in EXTRA:
         try:
-            return EXTRA[name](user, **arguments), False
+            return EXTRA[name](user, scope=scope, **arguments), False
         except (ValueError, LookupError, TypeError) as exc:
             return f"Error: {exc}", True
     from concierge.brain import profile_for
 
     profile_for(user)
-    out = Toolbox(user, provider=None, today=local_today(user)).run(name, json.dumps(arguments))
+    out = Toolbox(user, provider=None, today=local_today(user), workspace_id=scope).run(name, json.dumps(arguments))
     return out, out.startswith(("Error:", "Unknown tool"))

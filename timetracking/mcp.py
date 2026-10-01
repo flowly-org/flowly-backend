@@ -16,29 +16,32 @@ def _fmt(seconds):
     return f"{h}h{m:02d}m"
 
 
-def _workspace_for(user, task_id=None, workspace=""):
+def _workspace_for(user, task_id=None, workspace="", scope=None):
     from tasks.access import member_visible_q
     from tasks.models import Task
 
     if task_id:
-        task = Task.objects.filter(workspace__memberships__user=user).filter(member_visible_q(user)).filter(pk=int(task_id)).first()
+        tasks = Task.objects.filter(workspace_id=scope) if scope else Task.objects.all()
+        task = tasks.filter(workspace__memberships__user=user).filter(member_visible_q(user)).filter(pk=int(task_id)).first()
         if task is None:
             raise LookupError(f"No task #{task_id} you can access.")
         return task.workspace, task
     qs = Workspace.objects.filter(memberships__user=user)
+    if scope:
+        return qs.get(pk=scope), None
     ws = (qs.filter(name__iexact=workspace).first() if workspace else None) or qs.filter(name__iexact="Personal").first() or qs.first()
     if ws is None:
         raise LookupError("No workspace.")
     return ws, None
 
 
-def start_timer(user, task_id=None, description="", workspace=""):
-    ws, task = _workspace_for(user, task_id, workspace)
+def start_timer(user, task_id=None, description="", workspace="", scope=None):
+    ws, task = _workspace_for(user, task_id, workspace, scope)
     services.start_timer(user, ws, task, description)
     return f"Timer started on {task.title if task else description or 'untitled work'} ({ws.name})."
 
 
-def stop_timer(user):
+def stop_timer(user, scope=None):
     entry = services.stop_timer(user)
     if entry is None:
         return "No timer was running."
@@ -46,11 +49,11 @@ def stop_timer(user):
     return f"Stopped: {_fmt(entry.duration_seconds)} on {what}."
 
 
-def log_time(user, minutes, task_id=None, description="", day="today", workspace=""):
+def log_time(user, minutes, task_id=None, description="", day="today", workspace="", scope=None):
     minutes = int(minutes)
     if not 1 <= minutes <= 24 * 60:
         raise ValueError("minutes must be between 1 and 1440.")
-    ws, task = _workspace_for(user, task_id, workspace)
+    ws, task = _workspace_for(user, task_id, workspace, scope)
     on = timezone.localdate() if day == "today" else (timezone.localdate() - timedelta(days=1) if day == "yesterday" else date.fromisoformat(day))
     start = timezone.make_aware(timezone.datetime.combine(on, timezone.datetime.min.time()).replace(hour=9))
     project = task.project if task else None
@@ -60,10 +63,12 @@ def log_time(user, minutes, task_id=None, description="", day="today", workspace
     return f"Logged {_fmt(minutes * 60)} on {task.title if task else description or 'work'} for {on} ({ws.name})."
 
 
-def time_report(user, start="", end=""):
+def time_report(user, start="", end="", scope=None):
     s = date.fromisoformat(start) if start else timezone.localdate() - timedelta(days=timezone.localdate().weekday())
     e = date.fromisoformat(end) if end else timezone.localdate()
     entries = TimeEntry.objects.filter(user=user, started_at__date__gte=s, started_at__date__lte=e).select_related("task", "project", "workspace")
+    if scope:
+        entries = entries.filter(workspace_id=scope)
     totals = {}
     for entry in entries:
         key = f"{entry.workspace.name} / {entry.project.name if entry.project_id else 'No project'}"

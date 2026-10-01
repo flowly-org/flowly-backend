@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "concierge",
     "instance",
     "mcpserver",
+    "mcpauth",
     "timetracking",
 ]
 

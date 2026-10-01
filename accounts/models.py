@@ -36,6 +36,8 @@ class User(AbstractUser):
 
     plan = models.CharField(max_length=10, choices=Plan.choices, default=Plan.FREE)
     plan_expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry.")
+    #: Service identity behind a workspace MCP token (not a person; can't sign in).
+    is_bot = models.BooleanField(default=False)
     github_login = models.CharField(
         max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
     )

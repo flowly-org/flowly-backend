@@ -144,21 +144,35 @@ Workspaces can add an **OpenRouter** or **OpenAI-compatible** integration (API k
 A user may choose it as their concierge model; when a workspace's provider is marked *exclusive*,
 that workspace's tasks are never sent to any other model.
 
-## MCP server (Claude)
+## MCP server (ChatGPT, Claude, Cursor, any MCP client)
 
-Flowly is a remote MCP server at `<API URL>/api/mcp/` (Streamable HTTP, stateless JSON responses;
-protocol versions 2025-11-25 / 2025-06-18 / 2025-03-26). Authenticate with a personal API token
-(Settings → Claude & API tokens; `POST /api/auth/tokens/`) as `Authorization: Bearer flw_…`. The
-same tokens work for the REST API.
+Flowly is a remote MCP server (Streamable HTTP, stateless JSON responses; protocol versions
+2025-11-25 / 2025-06-18 / 2025-03-26):
 
-```bash
-claude mcp add --transport http flowly https://api.flowly.net/api/mcp/ --header "Authorization: Bearer flw_…"
-```
+| Endpoint | Scope |
+|---|---|
+| `https://api.flowly.net/api/mcp/` | everything the user can access |
+| `https://api.flowly.net/api/mcp/w/<workspace id>/` | one workspace only, for organization flows |
 
-Tools: `list_tasks`, `list_workspaces`, `create_task`, `update_task`, `complete_task`, `add_comment`,
-`start_timer`, `stop_timer`, `log_time`, `time_report`. They run with the token owner's permissions;
-workspaces whose AI provider is marked *exclusive* are hidden. Other apps add tools with
-`mcpserver.tools.register(...)`. claude.ai custom connectors additionally need OAuth (not yet implemented).
+**Authentication**
+
+- **OAuth 2.1** (what ChatGPT connectors, claude.ai connectors, Cursor, VS Code… use): the 401 carries
+  `WWW-Authenticate: Bearer resource_metadata=…` → protected resource metadata (RFC 9728) →
+  authorization server metadata at `/.well-known/oauth-authorization-server` (RFC 8414) → dynamic client
+  registration at `/api/oauth/register` (RFC 7591) → authorization code + PKCE S256 with the consent page
+  at `<app>/oauth/authorize` → `/api/oauth/token` (1 h access tokens `flo_…`, rotating 60-day refresh
+  tokens) → `/api/oauth/revoke`. A grant made for a workspace URL only works on that workspace. Users see
+  and disconnect apps in Settings.
+- **Personal tokens** (`flw_…`, Settings): `Authorization: Bearer flw_…` on any endpoint the user can reach;
+  also valid for the REST API.
+  `claude mcp add --transport http flowly https://api.flowly.net/api/mcp/ --header "Authorization: Bearer flw_…"`
+- **Workspace service tokens** (`flws_…`, created by owners/admins under Integrations): only work on that
+  workspace's endpoint and act as a bot member ("Bot: <name>"), so automations don't depend on a person.
+
+**Tools**: `search`, `fetch` (the read-only pair ChatGPT's connectors / deep research use; ids are task
+refs, urls task links), `list_tasks`, `list_workspaces`, `create_task`, `update_task`, `complete_task`,
+`add_comment`, `start_timer`, `stop_timer`, `log_time`, `time_report`. Workspaces whose AI provider is
+*exclusive* are never exposed. Other apps add tools with `mcpserver.tools.register(...)`.
 
 ## Time tracking & billing
 

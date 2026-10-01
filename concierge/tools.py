@@ -55,9 +55,11 @@ def describe(task: Task, today: date) -> str:
 
 
 class Toolbox:
-    def __init__(self, user, provider, today: date):
+    def __init__(self, user, provider, today: date, workspace_id=None):
         self.user, self.provider, self.today = user, provider, today
         self.hidden = hidden_workspace_ids(user, provider)
+        #: Workspace endpoints of the MCP server limit every tool to one workspace.
+        self.only = workspace_id
 
     # --- schema ---------------------------------------------------------------
 
@@ -107,11 +109,16 @@ class Toolbox:
 
     # --- helpers --------------------------------------------------------------
 
+    def _workspaces(self):
+        qs = _workspaces(self.user).exclude(pk__in=self.hidden)
+        return qs.filter(pk=self.only) if self.only else qs
+
     def _tasks(self):
         from tasks.access import member_visible_q
 
+        qs = Task.objects.filter(workspace_id=self.only) if self.only else Task.objects.all()
         return (
-            Task.objects.filter(workspace__memberships__user=self.user)
+            qs.filter(workspace__memberships__user=self.user)
             .filter(member_visible_q(self.user))
             .exclude(workspace_id__in=self.hidden)
             .select_related("workspace", "project", "status", "priority", "assignee")
@@ -124,7 +131,9 @@ class Toolbox:
         return task
 
     def _workspace(self, name) -> Workspace:
-        qs = _workspaces(self.user).exclude(pk__in=self.hidden)
+        qs = self._workspaces()
+        if self.only:
+            return qs.first()
         if name:
             ws = qs.filter(name__iexact=name).first() or qs.filter(name__icontains=name).first()
             if ws is None:
@@ -174,7 +183,7 @@ class Toolbox:
 
     def tool_list_workspaces(self):
         out = []
-        for ws in _workspaces(self.user).exclude(pk__in=self.hidden):
+        for ws in self._workspaces():
             groups = {g.kind: [t.name for t in g.tags.all()] for g in ws.tag_groups.filter(kind__in=["status", "priority"])}
             projects = [p.name for p in ws.projects.filter(archived=False)]
             out.append(
