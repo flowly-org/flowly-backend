@@ -37,7 +37,7 @@ class Email(Connector):
         domain = conf.get("EMAIL_INBOUND_DOMAIN")
         return {
             "address": f"{integration.token}@{domain}" if domain else None,
-            "endpoint": f"{conf.get("PUBLIC_URL")}/api/integrations/email/inbound/",
+            "endpoint": f"{conf.get("API_PUBLIC_URL")}/api/integrations/email/inbound/",
             "configured": bool(domain),
         }
 

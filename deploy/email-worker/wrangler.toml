@@ -1,0 +1,7 @@
+name = "flowly-email-in"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+FLOWLY_ENDPOINT = "https://api.flowly.net/api/integrations/email/inbound/"
+# FLOWLY_KEY is a secret: npx wrangler secret put FLOWLY_KEY

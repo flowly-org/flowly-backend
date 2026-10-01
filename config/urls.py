@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
+from accounts.guide import GuideView
 from mcpauth import views as oauth
 from mcpserver.views import McpView
 from timetracking.views import TimerView
@@ -35,6 +36,7 @@ urlpatterns = [
     path("api/t/<str:ref>/", TaskLinkView.as_view(), name="task-link"),
     path("api/t/<str:ref>/comments/", TaskLinkCommentView.as_view(), name="task-link-comments"),
     path("api/t/<str:ref>/attachments/<int:attachment_id>/download/", TaskLinkAttachmentView.as_view(), name="task-link-attachment"),
+    path("api/my/guide/", GuideView.as_view(), name="my-guide"),
     path("api/my/timer/", TimerView.as_view(), name="my-timer"),
     path("api/my/shared/", SharedWithMeView.as_view(), name="my-shared"),
     path("api/my/tasks/", MyTaskListView.as_view(), name="my-tasks"),
