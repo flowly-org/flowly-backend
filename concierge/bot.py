@@ -16,18 +16,40 @@ def help_text(profile):
     return t("help", brain.lang(profile.user), name=profile.name or "Flo")
 
 
+def image_of(message: dict):
+    """(file_id, mime) of a photo, or of an image sent as a file; else None."""
+    if message.get("photo"):
+        return message["photo"][-1]["file_id"], "image/jpeg"  # the largest size
+    doc = message.get("document") or {}
+    if doc.get("mime_type") in ("image/jpeg", "image/png", "image/webp"):
+        return doc["file_id"], doc["mime_type"]
+    return None
+
+
 def handle_update(update: dict):
     message = update.get("message") or {}
     chat = message.get("chat") or {}
     text = (message.get("text") or "").strip()
     chat_id = chat.get("id")
-    if not chat_id or not text or chat.get("type") != "private":
+    image = image_of(message)
+    if not chat_id or not (text or image) or chat.get("type") != "private":
         return
     try:
+        if image:
+            return _handle_photo(chat_id, *image, (message.get("caption") or "").strip())
         _handle(chat_id, text, (message.get("from") or {}).get("username", ""))
     except Exception:
         log.exception("Telegram update failed")
         telegram.send_message(chat_id, "Sorry, something went wrong on my side.")
+
+
+def _handle_photo(chat_id, file_id, mime, caption):
+    from .photo_chat import handle
+
+    profile = ConciergeProfile.objects.filter(telegram_chat_id=chat_id).select_related("user").first()
+    if profile is None:
+        return telegram.send_message(chat_id, "Hi! To connect, open Flowly → Settings → Concierge and tap “Connect Telegram”.")
+    handle(profile, chat_id, file_id, mime, caption)
 
 
 def _handle(chat_id, text, username):
@@ -51,6 +73,10 @@ def _handle(chat_id, text, username):
         profile.alerts = True
         profile.save(update_fields=["alerts"])
         return telegram.send_message(chat_id, t("alerts_on", code))
+    if command == "/undo":
+        from .photo_chat import undo
+
+        return undo(profile, chat_id)
     if command == "/forget":
         profile.memory = ""
         profile.save(update_fields=["memory"])

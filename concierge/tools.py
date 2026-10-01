@@ -87,6 +87,11 @@ class Toolbox:
         {"name": "add_comment", "description": "Add a comment to a task's discussion.",
          "parameters": {"type": "object", "required": ["task_id", "text"], "properties": {
              "task_id": {"type": "integer"}, "text": {"type": "string"}}}},
+        {"name": "start_timer", "description": "Start tracking time on a task (stops any running timer). Find the task id "
+         "with list_tasks first.",
+         "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
+        {"name": "stop_timer", "description": "Stop the running timer and say how long was tracked.",
+         "parameters": {"type": "object", "properties": {}}},
         {"name": "list_events", "description": "List the user's calendar events (Google Calendar). They are background, "
          "not tasks. Each line has an E-id, and for events that may need preparation the reason and linked tasks.",
          "parameters": {"type": "object", "properties": {
@@ -269,6 +274,17 @@ class Toolbox:
         emit_comment(comment)
         notify.comment_added(comment)
         return f"Commented on #{task.id}."
+
+    def tool_start_timer(self, task_id):
+        from timetracking.mcp import start_timer
+
+        self._task(task_id)  # visibility and hidden workspaces
+        return start_timer(self.user, task_id=int(task_id), scope=self.only)
+
+    def tool_stop_timer(self):
+        from timetracking.mcp import stop_timer
+
+        return stop_timer(self.user, scope=self.only)
 
     def _event(self, event_id):
         from calendars.models import CalendarEvent

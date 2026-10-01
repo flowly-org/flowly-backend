@@ -31,7 +31,7 @@ Rules:
 - Only if the list clearly marks it: !{priorities} for priority, +Project for one of these projects: {projects};
   #tag for one of these tags: {tags}. Never invent projects or tags.
 - Ignore headings, page decorations and anything that isn't a task.
-- Reply with the list only: no title, no comments, no code fences. If there is no legible to-do item, reply NONE."""
+{note}- Reply with the list only: no title, no comments, no code fences. If there is no legible to-do item, reply NONE."""
 
 
 def provider_for(user, workspace):
@@ -59,7 +59,7 @@ def clean(text: str) -> str:
     return "" if text.upper() == "NONE" else text
 
 
-def read_list(user, workspace, image: bytes, content_type: str) -> tuple[str, str]:
+def read_list(user, workspace, image: bytes, content_type: str, note: str = "") -> tuple[str, str]:
     from concierge.notify import local_today
     from tasks.models import TagGroup
 
@@ -71,6 +71,8 @@ def read_list(user, workspace, image: bytes, content_type: str) -> tuple[str, st
         priorities="/!".join(t.name.lower() for t in tags.filter(group__kind=TagGroup.Kind.PRIORITY).order_by("position")) or "high",
         projects=names(workspace.projects.filter(archived=False)),
         tags=names(tags.exclude(group__kind__in=[TagGroup.Kind.STATUS, TagGroup.Kind.PRIORITY])),
+        note=f"- The user wrote this about the photo; follow it for dates, projects or priorities: {note.strip()[:300]!r}\n"
+        if note.strip() else "",
     )
     provider = provider_for(user, workspace)
     url = f"data:{content_type};base64,{base64.b64encode(image).decode()}"

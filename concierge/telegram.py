@@ -37,6 +37,16 @@ def send_message(chat_id: int, text: str):
              disable_web_page_preview=True)
 
 
+def download(file_id: str, max_bytes: int = 10 * 1024 * 1024) -> bytes:
+    """Bytes of a file the user sent (photos, documents)."""
+    info = call("getFile", file_id=file_id) or {}
+    path = info.get("file_path")
+    if not path or int(info.get("file_size") or 0) > max_bytes:
+        raise ValueError("File not available or too large.")
+    url = f"{settings.TELEGRAM_API_URL}/file/bot{conf.get("TELEGRAM_BOT_TOKEN")}/{path}"
+    return send("GET", url, timeout=40, check_url=False).content
+
+
 def get_updates(offset: int | None, timeout: int = 0):
     params = {"timeout": timeout, "allowed_updates": ["message"]}
     if offset is not None:

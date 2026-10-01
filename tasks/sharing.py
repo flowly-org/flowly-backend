@@ -64,9 +64,7 @@ class BulkCreateView(WorkspaceScopedMixin, APIView):
     """POST /workspaces/<ws>/tasks/bulk/ {"tasks": [{...}, ...]}: all or nothing."""
 
     def post(self, request, workspace_pk):
-        from concierge import notify
-        from integrations.events import emit, has_outgoing
-
+        from .bulk import create_many
         from .serializers import TaskSerializer
 
         items = request.data.get("tasks")
@@ -74,20 +72,8 @@ class BulkCreateView(WorkspaceScopedMixin, APIView):
             raise ValidationError({"tasks": "Send a non-empty list of tasks."})
         if len(items) > 200:
             raise ValidationError({"tasks": "At most 200 tasks at once."})
+        created = create_many(request.user, self.workspace, items, request=request)
         context = {"workspace": self.workspace, "request": request}
-        serializers_ = [TaskSerializer(data=item, context=context) for item in items]
-        errors = {i: s.errors for i, s in enumerate(serializers_) if not s.is_valid()}
-        if errors:
-            raise ValidationError({"tasks": errors})
-        tracked = has_outgoing(self.workspace.id)
-        created = []
-        with transaction.atomic():
-            for s in serializers_:
-                created.append(s.save(workspace=self.workspace, created_by=request.user))
-        for task in created:
-            if tracked:
-                emit(None, task)
-            notify.task_changed(None, task, actor=request.user)
         return Response(TaskSerializer(created, many=True, context=context).data, status=status.HTTP_201_CREATED)
 
 

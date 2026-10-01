@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 from accounts.models import User
 from concierge import jobs
 from concierge.models import ConciergeProfile, Notification
+from concierge.notify import local_today
 from integrations.models import Integration
 from tasks.models import Task
 from workspaces.models import Membership
@@ -43,6 +44,10 @@ class FakeWorld:
         if url.endswith("/getUpdates"):
             updates, self.updates = self.updates, []
             return FakeResponse({"ok": True, "result": updates})
+        if url.endswith("/getFile"):
+            return FakeResponse({"ok": True, "result": {"file_path": "photos/list.jpg", "file_size": 1234}})
+        if "/file/bot" in url:
+            return FakeResponse({"jpeg": "bytes"})
         if url.endswith("/sendMessage"):
             self.sent.append(json)
             return FakeResponse({"ok": True, "result": {}})
@@ -157,7 +162,7 @@ class ConciergeTests(APITestCase):
         tool_msgs = [m for m in world.llm_calls[-1]["json"]["messages"] if m["role"] == "tool"]
         self.assertIn("Write report", tool_msgs[0]["content"])
         created = Task.objects.get(title="Call accountant")
-        self.assertEqual((created.assignee, created.priority.name, created.planned_date), (self.user, "High", timezone.localdate() + timedelta(days=1)))
+        self.assertEqual((created.assignee, created.priority.name, created.planned_date), (self.user, "High", local_today(self.user) + timedelta(days=1)))
         self.assertEqual(world.llm_calls[0]["json"]["model"], "test/model")
         self.assertEqual(world.llm_calls[0]["headers"]["Authorization"], "Bearer or-key")
         # Offset advanced: nothing is processed twice.
@@ -324,3 +329,80 @@ class PhotoImportTests(APITestCase):
             res = self.upload()
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(calls[0]["model"], "llava")
+
+
+
+@override_settings(OPENROUTER_API_KEY="or-key", OPENROUTER_MODEL="test/model", TELEGRAM_BOT_TOKEN="123:abc", TELEGRAM_MODE="polling")
+class TelegramPhotoAndTimerTests(APITestCase):
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "t@example.com", "password": "s3cure-Passw0rd", "full_name": "T"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="t@example.com")
+        self.user.plan = "pro"
+        self.user.save()
+        ConciergeProfile.objects.create(user=self.user, telegram_chat_id=777, timezone="UTC")
+        self.personal = self.client.get("/api/workspaces/").data[0]["id"]
+        self.mensa = self.client.post("/api/workspaces/", {"name": "Mensa"}).data["id"]
+        self.client.post(f"/api/workspaces/{self.mensa}/projects/", {"name": "Cucina"}, format="json")
+
+    def photo_update(self, caption=""):
+        return {"update_id": 1, "message": {"chat": {"id": 777, "type": "private"}, "from": {"username": "t"},
+                "caption": caption, "photo": [{"file_id": "small"}, {"file_id": "big"}]}}
+
+    def test_photo_becomes_tasks_in_the_named_workspace_and_undo(self):
+        from concierge import bot
+
+        listing = "- Ordinare piatti +Cucina\n  200 pezzi\n- [x] Chiamare fornitore\n- Menu della settimana @2030-01-07"
+        world = FakeWorld(llm_replies=[{"role": "assistant", "content": listing}])
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update(self.photo_update("lista per mensa domani"))
+        tasks = {t.title: t for t in Task.objects.filter(workspace_id=self.mensa)}
+        self.assertEqual(set(tasks), {"Ordinare piatti", "Chiamare fornitore", "Menu della settimana"})
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        self.assertEqual(tasks["Ordinare piatti"].planned_date, tomorrow)
+        self.assertEqual(tasks["Ordinare piatti"].project.name, "Cucina")
+        self.assertEqual(tasks["Ordinare piatti"].description, "200 pezzi")
+        self.assertTrue(tasks["Chiamare fornitore"].status.is_done)
+        self.assertEqual(str(tasks["Menu della settimana"].planned_date), "2030-01-07")
+        self.assertEqual(tasks["Ordinare piatti"].assignee, self.user)
+        reply = world.sent[-1]["text"]
+        self.assertIn("3", reply)
+        self.assertIn("Mensa", reply)
+        self.assertIn("/undo", reply)
+        # The vision request carried the image and the caption.
+        body = world.llm_calls[0]["json"]
+        self.assertIn("lista per mensa domani", body["messages"][0]["content"][0]["text"])
+        self.assertTrue(body["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,"))
+
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update({"update_id": 2, "message": {"chat": {"id": 777, "type": "private"}, "text": "/undo"}})
+        self.assertFalse(Task.objects.filter(workspace_id=self.mensa).exists())
+
+    def test_photo_without_tasks_and_without_pro(self):
+        from concierge import bot
+
+        world = FakeWorld(llm_replies=[{"role": "assistant", "content": "NONE"}])
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update(self.photo_update())
+        self.assertFalse(Task.objects.exists())
+        self.user.plan = "free"
+        self.user.save()
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update(self.photo_update())
+        self.assertIn("Pro", world.sent[-1]["text"])
+
+    def test_concierge_starts_and_stops_the_timer(self):
+        from concierge import brain
+
+        task = self.client.post(f"/api/workspaces/{self.personal}/tasks/", {"title": "Write slides"}, format="json").data
+        world = FakeWorld(llm_replies=[
+            tool_call("start_timer", {"task_id": task["id"]}),
+            {"role": "assistant", "content": "Timer running on Write slides."},
+            tool_call("stop_timer", {}, "c2"),
+            {"role": "assistant", "content": "Stopped."},
+        ])
+        with mock.patch("integrations.http.requests.request", world):
+            brain.reply(self.user, "start the timer on the slides")
+            self.assertEqual(self.client.get("/api/my/timer/").data["entry"]["task"], task["id"])
+            brain.reply(self.user, "stop")
+        self.assertIsNone(self.client.get("/api/my/timer/").data["entry"])
