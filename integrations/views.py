@@ -18,7 +18,7 @@ from instance import conf
 
 from . import github
 from .connectors import REGISTRY
-from .connectors.email import Email, parse_address, token_from_recipient
+from .connectors.email import Email, parse_address, resolve
 from .connectors.github import GitHub
 from .connectors.webhooks import sign
 from .http import DeliveryError
@@ -289,12 +289,9 @@ class EmailInboundView(PublicView):
         handled = 0
         seen = set()
         for recipient in ",".join(recipients).split(","):
-            token = token_from_recipient(recipient)
-            if not token or token in seen:
-                continue
-            seen.add(token)
-            integration = Integration.objects.filter(token=token, kind="email", enabled=True).select_related("workspace", "project").first()
-            if integration:
+            integration = resolve(recipient)
+            if integration and integration.pk not in seen:
+                seen.add(integration.pk)
                 Email().receive(integration, sender=sender, subject=subject, text=text, message_id=message_id)
                 handled += 1
         if not handled:

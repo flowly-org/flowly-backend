@@ -123,3 +123,17 @@ class GitHubApp(models.Model):
 
     def __str__(self):
         return self.slug
+
+
+class EmailAlias(models.Model):
+    """A readable address for an Email-in integration: <name>@<inbound domain> (besides its token address)."""
+
+    integration = models.ForeignKey(Integration, on_delete=models.CASCADE, related_name="aliases")
+    name = models.CharField(max_length=40, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name

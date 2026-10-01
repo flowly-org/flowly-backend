@@ -166,6 +166,40 @@ class EmailTests(IntegrationTestCase):
         self.assertEqual((task.title, task.assignee.email), ("Buy milk", "alice@example.com"))
 
 
+    def test_aliases(self):
+        inbox = self.integration("email")
+        url = f"{self.base}/integrations/{inbox['id']}/"
+        res = self.client.patch(url, {"aliases": ["Mensa", "cucina@in.flowly.test", "mensa"]}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["aliases"], ["cucina", "mensa"])
+        self.assertEqual(res.data["info"]["aliases"], ["cucina@in.flowly.test", "mensa@in.flowly.test"])
+        # Rejected: reserved, malformed, token-like, someone else's.
+        for bad in (["postmaster"], ["has space"], ["0123456789abcdef0123"], ["-dash"]):
+            self.assertEqual(self.client.patch(url, {"aliases": bad}, format="json").status_code, 400, bad)
+        other = self.integration("email")
+        res = self.client.patch(f"{self.base}/integrations/{other['id']}/", {"aliases": ["mensa"]}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("taken", str(res.data))
+        self.assertEqual(self.client.patch(url, {"aliases": ["x"]}, format="json").status_code, 200)  # not for webhooks:
+        hook = self.integration("incoming_webhook")
+        self.assertEqual(self.client.patch(f"{self.base}/integrations/{hook['id']}/", {"aliases": ["a"]}, format="json").status_code, 400)
+        # Mail to an alias (with or without a +tag), case-insensitive.
+        self.client.patch(url, {"aliases": ["mensa"]}, format="json")
+        self.client.credentials()
+        for i, to in enumerate(["Mensa@in.flowly.test", "mensa+urgent@in.flowly.test"]):
+            mail = {"to": to, "from": "alice@example.com", "subject": f"Alias {i}", "text": "", "message_id": f"<a{i}@x>"}
+            self.assertEqual(self.client.post("/api/integrations/email/inbound/", mail, format="json").status_code, 200, to)
+        mail = {"to": "nobody@in.flowly.test", "from": "alice@example.com", "subject": "x", "text": ""}
+        self.assertEqual(self.client.post("/api/integrations/email/inbound/", mail, format="json").status_code, 404)
+        # Disabled integrations stop receiving through their aliases too.
+        Integration.objects.filter(pk=inbox["id"]).update(enabled=False)
+        mail = {"to": "mensa@in.flowly.test", "from": "alice@example.com", "subject": "Off", "text": "", "message_id": "<off@x>"}
+        self.assertEqual(self.client.post("/api/integrations/email/inbound/", mail, format="json").status_code, 404)
+        from tasks.models import Task
+
+        self.assertEqual(sorted(Task.objects.values_list("title", flat=True)), ["Alias 0", "Alias 1"])
+
+
 class SlackTests(IntegrationTestCase):
     def test_completed_task_posts_message(self):
         self.integration("slack", {"webhook_url": "https://hooks.slack.com/services/X"})

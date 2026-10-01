@@ -16,6 +16,42 @@ def parse_address(value: str) -> str:
     return match.group(0).lower() if match else ""
 
 
+ALIAS_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?$")
+TOKEN_LIKE = re.compile(r"^[0-9a-f]{16,}$")
+RESERVED = {
+    "abuse", "admin", "administrator", "hostmaster", "info", "mailer-daemon", "no-reply", "noreply", "postmaster",
+    "root", "security", "support", "webmaster", "www", "flowly", "help", "billing",
+}
+MAX_ALIASES = 10
+
+
+def clean_alias(value: str) -> str:
+    """Normalise and check an alias; raises ValueError with a readable message."""
+    name = (value or "").strip().lower()
+    if "@" in name:
+        name = name.split("@", 1)[0]
+    if not ALIAS_RE.match(name):
+        raise ValueError(f"“{value}”: use 1–40 letters, digits, dots, dashes or underscores.")
+    if name in RESERVED or TOKEN_LIKE.match(name) or "+" in name:
+        raise ValueError(f"“{name}” is reserved.")
+    return name
+
+
+def resolve(recipient: str):
+    """The enabled Email-in integration an address belongs to: alias (with or without +tag), or token."""
+    from ..models import EmailAlias, Integration
+
+    local = parse_address(recipient).split("@", 1)[0]
+    if not local:
+        return None
+    qs = Integration.objects.filter(kind="email", enabled=True).select_related("workspace", "project")
+    for name in dict.fromkeys([local, local.split("+", 1)[0]]):
+        alias = EmailAlias.objects.filter(name=name, integration__in=qs).select_related("integration").first()
+        if alias:
+            return qs.get(pk=alias.integration_id)
+    return qs.filter(token=local.rsplit("+", 1)[-1]).first()
+
+
 def token_from_recipient(recipient: str) -> str:
     """'<token>@domain' or 'anything+<token>@domain' → token."""
     local = parse_address(recipient).split("@", 1)[0]
@@ -37,6 +73,7 @@ class Email(Connector):
         domain = conf.get("EMAIL_INBOUND_DOMAIN")
         return {
             "address": f"{integration.token}@{domain}" if domain else None,
+            "aliases": [f"{a.name}@{domain}" for a in integration.aliases.all()] if domain else [],
             "endpoint": f"{conf.get("API_PUBLIC_URL")}/api/integrations/email/inbound/",
             "configured": bool(domain),
         }
