@@ -2,8 +2,9 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, OuterRef, Subquery
 from drf_spectacular.utils import extend_schema
-from rest_framework import mixins, status, viewsets
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework import mixins, permissions, status, viewsets
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from .models import Invitation, Membership, Workspace
@@ -91,7 +92,7 @@ class MemberViewSet(
             email=email,
             defaults={"role": role, "invited_by": request.user},
         )
-        return Response(InvitationSerializer(invitation).data, status=status.HTTP_202_ACCEPTED)
+        return Response(InvitationSerializer(invitation, context={"can_manage": True}).data, status=status.HTTP_202_ACCEPTED)
 
     def perform_update(self, serializer):
         self.require_manager()
@@ -115,9 +116,45 @@ class InvitationViewSet(
 ):
     serializer_class = InvitationSerializer
 
+    def get_serializer_context(self):
+        return {**super().get_serializer_context(), "can_manage": self.membership.can_manage}
+
     def get_queryset(self):
         return Invitation.objects.filter(workspace=self.workspace)
 
     def perform_destroy(self, instance):
         self.require_manager()
         instance.delete()
+
+
+class InvitationLinkView(APIView):
+    """GET /api/invitations/<token>/ (public preview) · POST …/accept/ (signed-in user joins)."""
+
+    def get_permissions(self):
+        return [permissions.AllowAny()] if self.request.method == "GET" else [permissions.IsAuthenticated()]
+
+    def load(self, token):
+        invitation = Invitation.objects.select_related("workspace", "invited_by").filter(token=token).first()
+        if invitation is None or invitation.link_expired:
+            raise NotFound("This invitation link is no longer valid. Ask for a new one.")
+        return invitation
+
+    def get(self, request, token):
+        inv = self.load(token)
+        member = request.user.is_authenticated and inv.workspace.memberships.filter(user=request.user).exists()
+        return Response(
+            {
+                "workspace": {"id": inv.workspace_id if member else None, "name": inv.workspace.name, "color": inv.workspace.color},
+                "invited_by": (inv.invited_by.full_name or inv.invited_by.email) if inv.invited_by else None,
+                "email": inv.email,
+                "role": inv.role,
+                "already_member": member,
+            }
+        )
+
+    @transaction.atomic
+    def post(self, request, token):
+        inv = self.load(token)
+        Membership.objects.get_or_create(workspace=inv.workspace, user=request.user, defaults={"role": inv.role})
+        inv.delete()
+        return Response({"workspace": inv.workspace_id})

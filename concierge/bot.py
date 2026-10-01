@@ -9,13 +9,11 @@ from .models import ConciergeProfile
 
 log = logging.getLogger("flowly.concierge")
 
-HELP = (
-    "I'm your Flowly concierge. Just write to me, e.g.\n"
-    "• what's on my plate today?\n"
-    "• add “call the accountant” tomorrow in Personal\n"
-    "• move the proposal to Friday\n\n"
-    "Commands: /today brief · /alerts_off · /alerts_on · /forget (clear what I remember) · /help"
-)
+from .i18n import t
+
+
+def help_text(profile):
+    return t("help", brain.lang(profile.user), name=profile.name or "Flo")
 
 
 def handle_update(update: dict):
@@ -42,23 +40,24 @@ def _handle(chat_id, text, username):
         return telegram.send_message(chat_id, "Hi! To connect, open Flowly → Settings → Concierge and tap “Connect Telegram”.")
     user = profile.user
     command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
+    code = brain.lang(user)
     if command in ("/start", "/help"):
-        return telegram.send_message(chat_id, HELP)
+        return telegram.send_message(chat_id, help_text(profile))
     if command == "/alerts_off":
         profile.alerts = False
         profile.save(update_fields=["alerts"])
-        return telegram.send_message(chat_id, "Alerts paused. /alerts_on to resume.")
+        return telegram.send_message(chat_id, t("alerts_off", code))
     if command == "/alerts_on":
         profile.alerts = True
         profile.save(update_fields=["alerts"])
-        return telegram.send_message(chat_id, "Alerts are on.")
+        return telegram.send_message(chat_id, t("alerts_on", code))
     if command == "/forget":
         profile.memory = ""
         profile.save(update_fields=["memory"])
-        return telegram.send_message(chat_id, "I've cleared what I remembered about you.")
+        return telegram.send_message(chat_id, t("forgot", code))
     reason = brain.availability(user)
     if reason:
-        return telegram.send_message(chat_id, reason + " Manage your plan in Flowly settings.")
+        return telegram.send_message(chat_id, reason)
     telegram.call("sendChatAction", chat_id=chat_id, action="typing")
     if command == "/today":
         return telegram.send_message(chat_id, brain.brief(user))
@@ -75,5 +74,5 @@ def link(chat_id, code, username):
     profile.link_code = ""
     profile.link_expires_at = None
     profile.save()
-    name = profile.user.full_name or profile.user.email
-    telegram.send_message(chat_id, f"Connected to Flowly as {name}. 🎉\n\n{HELP}")
+    who = profile.user.full_name or profile.user.email
+    telegram.send_message(chat_id, t("connected", brain.lang(profile.user), user=who) + "\n\n" + help_text(profile))

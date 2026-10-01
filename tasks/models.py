@@ -89,13 +89,33 @@ class Tag(models.Model):
         return f"{self.group}: {self.name}" if self.group_id else self.name
 
 
+REF_ALPHABET = "23456789abcdefghjkmnpqrstuvwxyz"
+
+
+def new_ref():
+    import secrets
+
+    return "".join(secrets.choice(REF_ALPHABET) for _ in range(10))
+
+
 class Task(models.Model):
+    class Visibility(models.TextChoices):
+        PRIVATE = "private", "Private"
+        TEAM = "team", "Team"
+        SHAREABLE = "shareable", "Shareable"
+        PUBLIC = "public", "Public"
+
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="tasks")
     project = models.ForeignKey(
         Project, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    #: Stable public id used in links (/t/<ref>).
+    ref = models.CharField(max_length=16, unique=True, default=new_ref, editable=False)
+    #: private: creator + assignee · team: workspace members · shareable: team + people it's shared with
+    #: · public: anyone with the link (read-only).
+    visibility = models.CharField(max_length=10, choices=Visibility.choices, default=Visibility.TEAM)
     # RESTRICT (not PROTECT) so deleting a whole workspace cascades; deleting a single status
     # tag goes through TagViewSet, which first moves its tasks to another status.
     status = models.ForeignKey(
@@ -268,4 +288,18 @@ class Attachment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        ordering = ["created_at", "id"]
+
+
+class TaskShare(models.Model):
+    """A person outside (or inside) the workspace a shareable task is shared with."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="shares")
+    email = models.EmailField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="task_shares")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["task", "email"], name="unique_task_share")]
         ordering = ["created_at", "id"]

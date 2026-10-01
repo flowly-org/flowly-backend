@@ -12,9 +12,11 @@ TASK_EVENTS = [
     "task.created", "task.updated", "task.status_changed", "task.completed", "task.assigned", "task.deleted",
     "comment.created",
 ]
+#: Broadcast-style integrations that must not see private tasks.
+PRIVATE_EXCLUDED = ("slack", "outgoing_webhook")
 TRACKED_FIELDS = [
     "title", "description", "status_id", "priority_id", "project_id", "assignee_id",
-    "planned_date", "due_date", "tags",
+    "planned_date", "due_date", "tags", "visibility",
 ]
 
 
@@ -40,6 +42,7 @@ def snapshot(task: Task) -> dict:
         "planned_date": task.planned_date.isoformat() if task.planned_date else None,
         "due_date": task.due_date.isoformat() if task.due_date else None,
         "tags": sorted(task.tags.values_list("id", flat=True)),
+        "visibility": task.visibility,
         "payload": task_payload(task),
     }
 
@@ -72,7 +75,10 @@ def task_payload(task: Task) -> dict:
         "planned_date": task.planned_date.isoformat() if task.planned_date else None,
         "due_date": task.due_date.isoformat() if task.due_date else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        "ref": task.ref,
+        "visibility": task.visibility,
         "url": board_url(task.workspace_id, task.planned_date),
+        "link": f"{conf.get('PUBLIC_URL')}/t/{task.ref}" if conf.get("PUBLIC_URL") else "",
     }
 
 
@@ -128,8 +134,11 @@ def emit(before: dict | None, task: Task | None, *, origin: Integration | None =
 
     now = timezone.now()
     created = []
+    private = current.get("visibility") == "private"
     for integration in integrations:
         if integration.project_id is not None and integration.project_id not in project_ids:
+            continue
+        if private and integration.kind in PRIVATE_EXCLUDED:
             continue
         connector = REGISTRY[integration.kind]
         for event in events:
@@ -186,6 +195,8 @@ def emit_comment(comment, *, origin: Integration | None = None):
     created = []
     for integration in integrations:
         if integration.project_id is not None and integration.project_id != task.project_id:
+            continue
+        if task.visibility == "private" and integration.kind in PRIVATE_EXCLUDED:
             continue
         if not REGISTRY[integration.kind].wants(integration, "comment.created", after, after, {}):
             continue

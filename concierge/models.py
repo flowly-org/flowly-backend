@@ -10,6 +10,10 @@ class ConciergeProfile(models.Model):
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="concierge")
     enabled = models.BooleanField(default=True)
+    #: What the assistant calls itself.
+    name = models.CharField(max_length=40, default="Flo")
+    #: "auto" = answer in the language the user writes in; otherwise a code from concierge.i18n.LANGUAGES.
+    language = models.CharField(max_length=10, default="auto")
     timezone = models.CharField(max_length=64, default="Europe/Rome")
     brief_time = models.TimeField(default=time(8, 0), help_text="Local time of the morning brief.")
     morning_brief = models.BooleanField(default=True)
@@ -55,6 +59,7 @@ class Notification(models.Model):
         URGENT = "urgent", "Urgent task for today"
         COMMENT = "comment", "New comment"
         BRIEF = "brief", "Daily brief"
+        SHARED = "shared", "Shared with you"
 
     class Telegram(models.TextChoices):
         NONE = "none", "Not sent"

@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from integrations.http import DeliveryError
 
+from .i18n import LLM_NAMES, t
 from .llm import LLMUnavailable, Provider, chat
 from .models import ConciergeMessage, ConciergeProfile
 from .tools import Toolbox, describe
@@ -37,7 +38,7 @@ def provider_for(user) -> Provider | None:
 def availability(user) -> str | None:
     """None if the concierge can work for this user, otherwise why not."""
     if not user.has_pro:
-        return "The concierge is a Flowly Pro feature."
+        return t("pro_only", lang(user))
     if provider_for(user) is None:
         return "No AI provider is configured. Ask the admin to set OPENROUTER_API_KEY, or pick a workspace AI provider."
     return None
@@ -50,13 +51,27 @@ def local_now(user) -> datetime:
         return timezone.localtime()
 
 
+def lang(user) -> str:
+    """Language code for fixed texts: the chosen one, or English when on auto."""
+    code = profile_for(user).language
+    return code if code in LLM_NAMES else "en"
+
+
+def language_rule(user) -> str:
+    code = profile_for(user).language
+    if code in LLM_NAMES:
+        return f"Always write in {LLM_NAMES[code]}, whatever language the user writes in."
+    return "Reply in the language the user writes in; if unclear, use English."
+
+
 def system_prompt(user, now: datetime) -> str:
     profile = profile_for(user)
     name = user.full_name or user.email.split("@")[0]
     memory = profile.memory.strip() or "(nothing yet)"
     return (
-        f"You are Flowly's concierge, the personal assistant of {name}. Flowly is a task planner where each day's tasks "
-        "are grouped by project or tags across several workspaces.\n"
+        f"You are {profile.name or 'Flo'}, Flowly's concierge and the personal assistant of {name}. Flowly is a task "
+        "planner where each day's tasks are grouped by project or tags across several workspaces.\n"
+        f"{language_rule(user)}\n"
         f"Now: {now:%A %d %B %Y, %H:%M} ({profile.timezone}). Today's date is {now.date().isoformat()}.\n"
         "Use the tools to look up and change tasks; never invent tasks or ids. When you change something, say what you "
         "changed. Keep replies short and friendly, as plain text for a chat app: short lines, '•' bullets, no markdown "
@@ -96,7 +111,7 @@ def reply(user, text: str, channel="telegram") -> str:
         return str(exc)
     except DeliveryError as exc:
         log.warning("Concierge LLM error for %s: %s %s", user.pk, exc, exc.body[:300])
-        return "Sorry, my AI provider didn't answer. Try again in a moment."
+        return t("error", lang(user))
     ConciergeMessage.objects.create(user=user, role="user", content=text[:4000], channel=channel)
     ConciergeMessage.objects.create(user=user, role="assistant", content=answer[:4000], channel=channel)
     return answer or "Done."
@@ -108,14 +123,15 @@ def plain_brief(user, now) -> str:
     today = now.date()
     open_today = [t for t in tasks.filter(planned_date__lte=today, status__is_done=False).order_by("planned_date", "position")]
     due = [t for t in tasks.filter(due_date=today, status__is_done=False)]
-    lines = [f"Good morning! {now:%A %d %B}:"]
+    code = lang(user)
+    lines = [t("brief_greeting", code, date=now.date().isoformat())]
     if not open_today:
-        lines.append("Nothing planned for today.")
-    for t in open_today[:15]:
-        extra = " (carried over)" if t.planned_date and t.planned_date < today else ""
-        lines.append(f"• {t.title} — {t.workspace.name}{extra}")
+        lines.append(t("brief_empty", code))
+    for task in open_today[:15]:
+        extra = f" ({t('brief_carried', code)})" if task.planned_date and task.planned_date < today else ""
+        lines.append(f"• {task.title} — {task.workspace.name}{extra}")
     if due:
-        lines.append("Due today: " + ", ".join(t.title for t in due))
+        lines.append(f"{t('brief_due', code)}: " + ", ".join(task.title for task in due))
     return "\n".join(lines)
 
 

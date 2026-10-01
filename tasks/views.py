@@ -11,6 +11,7 @@ from workspaces.models import Membership
 from workspaces.permissions import WorkspaceScopedMixin
 from workspaces.serializers import MembershipSerializer
 
+from .access import member_visible_q
 from .filters import TaskFilter
 from .models import Tag, TagGroup, Task
 from .serializers import ProjectSerializer, TagGroupSerializer, TagSerializer, TaskSerializer
@@ -96,7 +97,9 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     filterset_class = TaskFilter
 
     def get_queryset(self):
-        return with_counts(self.workspace.tasks.prefetch_related("tags").select_related("status")).order_by("position", "id")
+        return with_counts(
+            self.workspace.tasks.filter(member_visible_q(self.request.user)).prefetch_related("tags").select_related("status")
+        ).order_by("position", "id")
 
     # Task changes feed the workspace's outgoing integrations (webhooks, Slack, GitHub).
 
@@ -132,8 +135,9 @@ class MyTaskListView(generics.ListAPIView):
     filterset_class = TaskFilter
 
     def get_queryset(self):
+        user = self.request.user
         return with_counts(
-            Task.objects.filter(workspace__memberships__user=self.request.user).prefetch_related("tags")
+            Task.objects.filter(workspace__memberships__user=user).filter(member_visible_q(user)).prefetch_related("tags")
         ).order_by("position", "id")
 
 

@@ -11,6 +11,7 @@ from instance import conf
 
 from . import brain, telegram
 from .bot import handle_update
+from .i18n import LANGUAGES
 from .models import AIUsage, Notification
 
 
@@ -47,6 +48,8 @@ class NotificationsView(APIView):
 
 class ConciergeSettingsSerializer(serializers.Serializer):
     enabled = serializers.BooleanField(required=False)
+    name = serializers.CharField(required=False, max_length=40, allow_blank=False)
+    language = serializers.ChoiceField(required=False, choices=list(LANGUAGES))
     timezone = serializers.CharField(required=False, max_length=64)
     brief_time = serializers.TimeField(required=False)
     morning_brief = serializers.BooleanField(required=False)
@@ -93,8 +96,11 @@ class ConciergeView(APIView):
                     "linked": bool(profile.telegram_chat_id),
                     "username": profile.telegram_username,
                 },
+                "languages": [{"code": k, "label": v} for k, v in LANGUAGES.items()],
                 "settings": {
                     "enabled": profile.enabled,
+                    "name": profile.name,
+                    "language": profile.language,
                     "timezone": profile.timezone,
                     "brief_time": profile.brief_time.strftime("%H:%M"),
                     "morning_brief": profile.morning_brief,

@@ -51,8 +51,16 @@ class Membership(models.Model):
         return f"{self.user} @ {self.workspace} ({self.role})"
 
 
+def new_invite_token():
+    import secrets
+
+    return secrets.token_urlsafe(24)
+
+
 class Invitation(models.Model):
-    """Pending invite for an email that has no account yet; consumed on sign-up."""
+    """Pending invite for an email that has no account yet; consumed on sign-up or through its link."""
+
+    LINK_DAYS = 30
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="invitations")
     email = models.EmailField()
@@ -62,7 +70,17 @@ class Invitation(models.Model):
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: Secret for the shareable join link (/join/<token>).
+    token = models.CharField(max_length=64, unique=True, default=new_invite_token, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def link_expired(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        return self.created_at < timezone.now() - timedelta(days=self.LINK_DAYS)
 
     class Meta:
         constraints = [

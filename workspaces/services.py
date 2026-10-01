@@ -24,3 +24,6 @@ def onboard_user(user):
         )
         invitation.delete()
     create_workspace("Personal", user)
+    from tasks.models import TaskShare
+
+    TaskShare.objects.filter(email__iexact=user.email, user__isnull=True).update(user=user)

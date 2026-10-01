@@ -225,6 +225,24 @@ class ConciergeTests(APITestCase):
         tool_out = [m for m in world.llm_calls[-1]["json"]["messages"] if m["role"] == "tool"][0]["content"]
         self.assertIn("Secret plan", tool_out)
 
+    def test_name_and_language(self):
+        self.make_pro()
+        res = self.client.patch("/api/concierge/", {"name": "Jarvis", "language": "it"}, format="json")
+        self.assertEqual((res.data["settings"]["name"], res.data["settings"]["language"]), ("Jarvis", "it"))
+        self.assertEqual(self.client.patch("/api/concierge/", {"language": "klingon"}, format="json").status_code, 400)
+        world = FakeWorld(llm_replies=[{"role": "assistant", "content": "Ciao!"}])
+        with mock.patch("integrations.http.requests.request", world):
+            self.client.post("/api/concierge/chat/", {"message": "hi"}, format="json")
+        system = world.llm_calls[0]["json"]["messages"][0]["content"]
+        self.assertIn("You are Jarvis", system)
+        self.assertIn("Always write in Italian", system)
+        # Fixed bot texts follow the language too.
+        self.link_telegram(chat_id=321)
+        world = FakeWorld(updates=[{"update_id": 5, "message": {"chat": {"id": 321, "type": "private"}, "text": "/help"}}])
+        with mock.patch("integrations.http.requests.request", world):
+            jobs.poll_updates()
+        self.assertTrue(world.sent[0]["text"].startswith("Sono Jarvis"))
+
     def test_settings_endpoint(self):
         res = self.client.get("/api/concierge/").data
         self.assertEqual((res["plan"], res["has_pro"], res["available"]), ("free", False, False))

@@ -41,10 +41,21 @@ class MembershipSerializer(serializers.ModelSerializer):
 
 
 class InvitationSerializer(serializers.ModelSerializer):
+    link = serializers.SerializerMethodField()
+    link_expired = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = Invitation
-        fields = ["id", "email", "role", "created_at"]
+        fields = ["id", "email", "role", "created_at", "link", "link_expired"]
         read_only_fields = ["id", "created_at"]
+
+    def get_link(self, obj):
+        """Only owners/admins get the join link (it lets anyone with it join)."""
+        if not self.context.get("can_manage"):
+            return None
+        from instance import conf
+
+        return f"{conf.get('PUBLIC_URL')}/join/{obj.token}"
 
 
 class AddMemberSerializer(serializers.Serializer):

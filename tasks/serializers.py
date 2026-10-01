@@ -116,6 +116,8 @@ class TaskSerializer(WorkspaceScopedSerializer):
         model = Task
         fields = [
             "id",
+            "ref",
+            "visibility",
             "workspace",
             "title",
             "description",
@@ -134,7 +136,7 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "comment_count",
             "attachment_count",
         ]
-        read_only_fields = ["id", "workspace", "created_by", "created_at", "updated_at", "completed_at"]
+        read_only_fields = ["id", "ref", "workspace", "created_by", "created_at", "updated_at", "completed_at"]
 
     def get_comment_count(self, obj):
         value = getattr(obj, "comment_count", None)

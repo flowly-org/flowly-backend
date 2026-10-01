@@ -42,6 +42,27 @@ class AuthAndWorkspaceTests(ApiTestCase):
         names = sorted(w["name"] for w in self.client.get("/api/workspaces/").data)
         self.assertEqual(names, ["Personal", "Team"])
 
+    def test_invitation_link_lets_anyone_signed_in_join(self):
+        alice = self.register("alice@example.com")
+        self.login_as(alice)
+        ws = self.client.post("/api/workspaces/", {"name": "Team"}).data
+        inv = self.client.post(f"/api/workspaces/{ws['id']}/members/", {"email": "bob@example.com", "role": "admin"}).data
+        token = inv["link"].rsplit("/", 1)[1]
+        # Plain members don't see join links.
+        carol = self.register("carol@example.com")
+        self.login_as(carol)
+        self.client.credentials()
+        preview = self.client.get(f"/api/invitations/{token}/").data
+        self.assertEqual((preview["workspace"]["name"], preview["role"], preview["workspace"]["id"]), ("Team", "admin", None))
+        self.assertEqual(self.client.post(f"/api/invitations/{token}/accept/").status_code, 401)
+        self.login_as(carol)
+        res = self.client.post(f"/api/invitations/{token}/accept/")
+        self.assertEqual(res.data["workspace"], ws["id"])
+        self.assertEqual(self.client.get(f"/api/workspaces/{ws['id']}/").data["my_role"], "admin")
+        self.assertEqual(self.client.get(f"/api/invitations/{token}/").status_code, 404)  # used up
+        self.login_as(alice)
+        self.assertEqual(self.client.get(f"/api/workspaces/{ws['id']}/invitations/").data, [])
+
     def test_non_members_get_404(self):
         alice = self.register("alice@example.com")
         self.login_as(alice)

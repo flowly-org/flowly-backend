@@ -108,8 +108,11 @@ class Toolbox:
     # --- helpers --------------------------------------------------------------
 
     def _tasks(self):
+        from tasks.access import member_visible_q
+
         return (
             Task.objects.filter(workspace__memberships__user=self.user)
+            .filter(member_visible_q(self.user))
             .exclude(workspace_id__in=self.hidden)
             .select_related("workspace", "project", "status", "priority", "assignee")
         )

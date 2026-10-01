@@ -76,7 +76,9 @@ class TaskChildMixin(WorkspaceScopedMixin):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        self.task = get_object_or_404(self.workspace.tasks, pk=kwargs["task_pk"])
+        from .access import member_visible_q
+
+        self.task = get_object_or_404(self.workspace.tasks.filter(member_visible_q(request.user)), pk=kwargs["task_pk"])
 
     def can_moderate(self, author_id):
         return author_id == self.request.user.id or self.membership.can_manage
