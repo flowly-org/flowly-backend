@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     "accounts",
     "workspaces",
     "tasks",
+    "integrations",
 ]
 
 MIDDLEWARE = [
@@ -112,3 +113,17 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS", "http://localhost:4200,http://localhost:8080"
 )
+
+# Public base URL of the app (frontend origin; the API is at <PUBLIC_URL>/api). Used for links in
+# notifications and for GitHub App callbacks. Falls back to the request's origin when empty.
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+
+# Integrations
+GITHUB_API_URL = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+GITHUB_WEB_URL = os.environ.get("GITHUB_WEB_URL", "https://github.com")
+# Domain whose addresses are routed to Flowly's email-in endpoint, e.g. "in.example.com".
+EMAIL_INBOUND_DOMAIN = os.environ.get("EMAIL_INBOUND_DOMAIN", "")
+# Optional shared secret the inbound email provider must send (?key=... or X-Flowly-Key header).
+EMAIL_INBOUND_KEY = os.environ.get("EMAIL_INBOUND_KEY", "")
+# Outgoing webhooks may not target private/loopback addresses unless this is enabled.
+INTEGRATIONS_ALLOW_PRIVATE_URLS = os.environ.get("INTEGRATIONS_ALLOW_PRIVATE_URLS", "0") == "1"

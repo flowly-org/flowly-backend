@@ -30,6 +30,9 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=150, blank=True)
+    github_login = models.CharField(
+        max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
+    )
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

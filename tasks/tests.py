@@ -204,6 +204,10 @@ class StatusAndPriorityTagTests(TeamWorkspaceTestCase):
         for payload in bad:
             self.assertEqual(self.client.post(f"{self.base}/tasks/", payload, format="json").status_code, 400, payload)
 
+    def test_workspace_with_tasks_can_be_deleted(self):
+        self.client.post(f"{self.base}/tasks/", {"title": "t"}, format="json")
+        self.assertEqual(self.client.delete(f"{self.base}/").status_code, 204)
+
     def test_last_status_cannot_be_deleted(self):
         statuses = list(self.system_tags("status").values())
         for tag in statuses[:-1]:

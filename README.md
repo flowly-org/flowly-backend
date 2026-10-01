@@ -82,3 +82,31 @@ Moving a card on the board is a plain `PATCH` of `status`, `position`, `planned_
 
 Non-members get `404` for anything under a workspace. Related objects (projects, tags, assignees) are
 validated to belong to the same workspace.
+
+## Integrations
+
+Integrations belong to a workspace and can be limited to one project (`project`). Owners and admins
+manage them at `workspaces/{ws}/integrations/` (CRUD, plus `test/`, `rotate-secret/`, `deliveries/`,
+`deliveries/{id}/retry/`, `github/install/`, `github/repos/`).
+
+| Kind | Direction | What it does |
+|---|---|---|
+| `github` | both | Issues of one repo ↔ tasks. Opened/edited/closed/reopened/assigned/labelled issues create or update the linked task; moving a task into/out of a "done" status closes/reopens the issue. Optional: mirror the status as a `flowly: <status>` label, open issues for tasks created in Flowly. Assignees are matched by each user's `github_login`. |
+| `slack` | out | Posts task events to a channel through a Slack incoming-webhook URL. |
+| `outgoing_webhook` | out | POSTs JSON to your URL; header `X-Flowly-Signature: sha256=<HMAC-SHA256(secret, body)>`. |
+| `incoming_webhook` | in | `POST /api/hooks/<token>/` with `{external_id?, title, description, status, priority, tags[], assignee (email), planned_date, due_date, url}`; same `external_id` updates the task. |
+| `email` | in | Mail to `<token>@EMAIL_INBOUND_DOMAIN` becomes a task (members only by default). Point your provider at `POST /api/integrations/email/inbound/` (JSON `{to, from, subject, text, message_id}`, Mailgun, SendGrid or Postmark formats; optional `?key=EMAIL_INBOUND_KEY`). |
+
+Task changes (`task.created/updated/status_changed/completed/assigned/deleted`) are written to the
+`Delivery` table and sent by the **worker** service (`python manage.py run_worker`) with retries
+(30s, 2m, 10m, 1h, 6h; 4xx responses other than 408/409/429 aren't retried). A change coming from an
+integration is never echoed back to that same integration. Outgoing URLs that resolve to private
+addresses are refused unless `INTEGRATIONS_ALLOW_PRIVATE_URLS=1`.
+
+### GitHub App
+
+Flowly talks to GitHub through one GitHub App per instance, created with GitHub's manifest flow:
+an instance admin (`is_staff`) opens Integrations → GitHub → **Create GitHub App**, confirms on GitHub
+and is sent back; credentials are stored in the `GitHubApp` table. Set `PUBLIC_URL` first: GitHub
+uses it for the webhook (`<PUBLIC_URL>/api/integrations/github/webhook/`) and redirect URLs.
+Each GitHub integration is then installed on an account/repos via **Install on GitHub**.

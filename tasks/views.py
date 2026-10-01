@@ -5,6 +5,7 @@ from rest_framework import generics, serializers, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from integrations.events import emit, has_outgoing, snapshot
 from workspaces.models import Membership
 from workspaces.permissions import WorkspaceScopedMixin
 from workspaces.serializers import MembershipSerializer
@@ -82,8 +83,25 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         return self.workspace.tasks.prefetch_related("tags").select_related("status").order_by("position", "id")
 
+    # Task changes feed the workspace's outgoing integrations (webhooks, Slack, GitHub).
+
     def perform_create(self, serializer):
-        serializer.save(workspace=self.workspace, created_by=self.request.user)
+        task = serializer.save(workspace=self.workspace, created_by=self.request.user)
+        if has_outgoing(self.workspace.id):
+            emit(None, task)
+
+    def perform_update(self, serializer):
+        tracked = has_outgoing(self.workspace.id)
+        before = snapshot(serializer.instance) if tracked else None
+        task = serializer.save()
+        if tracked:
+            emit(before, task)
+
+    def perform_destroy(self, instance):
+        before = snapshot(instance) if has_outgoing(self.workspace.id) else None
+        instance.delete()
+        if before:
+            emit(before, None)
 
 
 class MyTaskListView(generics.ListAPIView):

@@ -93,8 +93,10 @@ class Task(models.Model):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    # RESTRICT (not PROTECT) so deleting a whole workspace cascades; deleting a single status
+    # tag goes through TagViewSet, which first moves its tasks to another status.
     status = models.ForeignKey(
-        Tag, on_delete=models.PROTECT, related_name="status_tasks", help_text="A tag of the STATUS group."
+        Tag, on_delete=models.RESTRICT, related_name="status_tasks", help_text="A tag of the STATUS group."
     )
     priority = models.ForeignKey(
         Tag,
