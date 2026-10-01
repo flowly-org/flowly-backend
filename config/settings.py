@@ -162,6 +162,7 @@ MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")
 # LLM: the platform OpenRouter key serves Pro users; workspaces can bring their own provider.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openrouter/auto")
+OPENROUTER_VISION_MODEL = os.environ.get("OPENROUTER_VISION_MODEL", "")
 OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 # Daily token budget per user on the platform key (BYO providers aren't capped).
 CONCIERGE_DAILY_TOKENS = int(os.environ.get("CONCIERGE_DAILY_TOKENS", "300000"))

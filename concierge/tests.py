@@ -250,3 +250,77 @@ class ConciergeTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         res = self.client.patch("/api/concierge/", {"timezone": "Europe/Rome", "brief_time": "07:30"}, format="json").data
         self.assertEqual(res["settings"]["brief_time"], "07:30")
+
+
+@override_settings(OPENROUTER_API_KEY="or-key", OPENROUTER_MODEL="test/model", OPENROUTER_VISION_MODEL="test/vision")
+class PhotoImportTests(APITestCase):
+    PNG = (b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "p@example.com", "password": "s3cure-Passw0rd", "full_name": "P"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="p@example.com")
+        self.ws = self.client.get("/api/workspaces/").data[0]["id"]
+        self.url = f"/api/workspaces/{self.ws}/tasks/from-photo/"
+
+    def upload(self, data=None, name="list.png", content_type="image/png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(self.url, {"image": SimpleUploadedFile(name, data or self.PNG, content_type=content_type)}, format="multipart")
+
+    def fake(self, reply):
+        calls = []
+
+        def request(method, url, json=None, data=None, headers=None, timeout=None):
+            calls.append(json)
+            return FakeResponse({"choices": [{"message": {"role": "assistant", "content": reply}}], "usage": {"prompt_tokens": 900, "completion_tokens": 40}})
+
+        return calls, request
+
+    def test_free_user_without_workspace_provider_is_told_why(self):
+        res = self.upload()
+        self.assertEqual(res.status_code, 402)
+        self.assertIn("Pro", res.data["detail"])
+
+    def test_pro_user_gets_bulk_text_from_the_vision_model(self):
+        self.user.plan = "pro"
+        self.user.save()
+        calls, request = self.fake("```\n- Comprare il pane\n- [x] Chiamare Luca\n  per la cena\n```")
+        with mock.patch("integrations.http.requests.request", request):
+            res = self.upload()
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["text"], "- Comprare il pane\n- [x] Chiamare Luca\n  per la cena")
+        body = calls[0]
+        self.assertEqual(body["model"], "test/vision")
+        parts = body["messages"][0]["content"]
+        self.assertIn("bulk-add format", parts[0]["text"])
+        self.assertTrue(parts[1]["image_url"]["url"].startswith("data:image/png;base64,"))
+        from concierge.models import AIUsage
+
+        self.assertEqual(AIUsage.objects.get(user=self.user).prompt_tokens, 900)
+
+    def test_nothing_legible_and_bad_files(self):
+        self.user.plan = "pro"
+        self.user.save()
+        _, request = self.fake("NONE")
+        with mock.patch("integrations.http.requests.request", request):
+            self.assertEqual(self.upload().status_code, 422)
+        self.assertEqual(self.upload(name="x.gif", content_type="image/gif").status_code, 400)
+        other = self.client.post("/api/workspaces/", {"name": "Other"}).data["id"]
+        Membership.objects.filter(workspace_id=other).delete()
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        res = self.client.post(f"/api/workspaces/{other}/tasks/from-photo/", {"image": SimpleUploadedFile("a.png", self.PNG, content_type="image/png")}, format="multipart")
+        self.assertEqual(res.status_code, 404)
+
+    @override_settings(INTEGRATIONS_ALLOW_PRIVATE_URLS=True)
+    def test_workspace_provider_is_used_even_for_free_users(self):
+        Integration.objects.create(
+            workspace_id=self.ws, kind="openai_compatible", name="Local", enabled=True,
+            config={"base_url": "http://10.0.0.5:8000/v1", "model": "llava", "exclusive": True},
+        )
+        calls, request = self.fake("- Task from local model")
+        with mock.patch("integrations.http.requests.request", request):
+            res = self.upload()
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(calls[0]["model"], "llava")

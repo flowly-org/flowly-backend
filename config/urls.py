@@ -3,6 +3,7 @@ from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from accounts.guide import GuideView
+from concierge.photo import PhotoTasksView
 from mcpauth import views as oauth
 from mcpserver.views import McpView
 from timetracking.views import TimerView
@@ -18,6 +19,7 @@ urlpatterns = [
     path("api/mcp", McpView.as_view()),
     path("api/mcp/w/<int:workspace_id>/", McpView.as_view(), name="mcp-workspace"),
     path("api/mcp/w/<int:workspace_id>", McpView.as_view()),
+    path("api/workspaces/<int:ws>/tasks/from-photo/", PhotoTasksView.as_view(), name="tasks-from-photo"),
     path("api/workspaces/<int:ws>/mcp-tokens/", oauth.WorkspaceTokensView.as_view(), name="workspace-mcp-tokens"),
     path("api/workspaces/<int:ws>/mcp-tokens/<int:pk>/", oauth.WorkspaceTokensView.as_view(), name="workspace-mcp-token"),
     path(".well-known/oauth-protected-resource", oauth.ProtectedResourceMetadata.as_view()),
