@@ -32,6 +32,8 @@ INSTALLED_APPS = [
     "integrations",
     "concierge",
     "instance",
+    "mcpserver",
+    "timetracking",
 ]
 
 MIDDLEWARE = [
@@ -90,6 +92,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        "accounts.tokens.ApiTokenAuthentication",
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
@@ -166,3 +169,15 @@ TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
 TELEGRAM_API_URL = os.environ.get("TELEGRAM_API_URL", "https://api.telegram.org")
 # Public URL of the API itself (webhooks), e.g. https://api.flowly.net. Defaults to PUBLIC_URL.
 API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", "").rstrip("/") or PUBLIC_URL
+
+# Log errors (with tracebacks) to the container output; Django's default only emails admins.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "root": {"handlers": ["console"], "level": "WARNING"},
+    "loggers": {
+        "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+        "flowly": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}

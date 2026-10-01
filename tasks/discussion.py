@@ -159,6 +159,7 @@ class PublicConfigView(APIView):
         return Response(
             {
                 "uploads": {"enabled": uploads_enabled(), "max_mb": conf.get("ATTACHMENT_MAX_MB")},
+                "mcp_url": f"{conf.get('API_PUBLIC_URL') or ''}/api/mcp/",
                 "google": google,
                 "microsoft": microsoft,
             }

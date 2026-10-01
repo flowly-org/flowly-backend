@@ -55,3 +55,34 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.full_name or self.email
+
+
+class ApiToken(models.Model):
+    """Personal access token for the API and the MCP server. Only a hash is stored."""
+
+    PREFIX = "flw_"
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="api_tokens")
+    name = models.CharField(max_length=80)
+    #: First characters of the token, to recognise it in the list.
+    hint = models.CharField(max_length=16)
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @staticmethod
+    def hash(raw: str) -> str:
+        import hashlib
+
+        return hashlib.sha256(raw.encode()).hexdigest()
+
+    @classmethod
+    def issue(cls, user, name):
+        import secrets
+
+        raw = cls.PREFIX + secrets.token_urlsafe(32)
+        token = cls.objects.create(user=user, name=name, hint=raw[:10], token_hash=cls.hash(raw))
+        return token, raw

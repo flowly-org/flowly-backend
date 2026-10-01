@@ -143,3 +143,32 @@ and answers/acts on requests with tools over your tasks (list/create/update/comp
 Workspaces can add an **OpenRouter** or **OpenAI-compatible** integration (API key stored encrypted).
 A user may choose it as their concierge model; when a workspace's provider is marked *exclusive*,
 that workspace's tasks are never sent to any other model.
+
+## MCP server (Claude)
+
+Flowly is a remote MCP server at `<API URL>/api/mcp/` (Streamable HTTP, stateless JSON responses;
+protocol versions 2025-11-25 / 2025-06-18 / 2025-03-26). Authenticate with a personal API token
+(Settings → Claude & API tokens; `POST /api/auth/tokens/`) as `Authorization: Bearer flw_…`. The
+same tokens work for the REST API.
+
+```bash
+claude mcp add --transport http flowly https://api.flowly.net/api/mcp/ --header "Authorization: Bearer flw_…"
+```
+
+Tools: `list_tasks`, `list_workspaces`, `create_task`, `update_task`, `complete_task`, `add_comment`,
+`start_timer`, `stop_timer`, `log_time`, `time_report`. They run with the token owner's permissions;
+workspaces whose AI provider is marked *exclusive* are hidden. Other apps add tools with
+`mcpserver.tools.register(...)`. claude.ai custom connectors additionally need OAuth (not yet implemented).
+
+## Time tracking & billing
+
+- `POST /api/my/timer/` `{"action": "start", "workspace", "task"?}` / `{"action": "stop"}`: one running
+  timer per person across workspaces; starting another stops the current one.
+- `workspaces/{ws}/time-entries/` (members see their own time, owners/admins everyone's;
+  `?from&to&user=me&project&task&unbilled`), `…/time-entries/report/?group=project|task|user|day`.
+- `workspaces/{ws}/billing/`: billing is **off** until an owner/admin enables it (currency, default
+  rate, rounding, tax, invoice numbering, issuer details). `…/billing/projects/<id>/` sets each project
+  to the default rate, its own rate (+ client, budget) or **off** (opt-out: its time is never billed).
+- `workspaces/{ws}/invoices/`: `POST {project?, period_start, period_end, group_by: task|day|entry}`
+  builds a draft from unbilled billable time and locks those entries; drafts can be deleted (time is
+  released), sent invoices voided (released) or marked paid; `…/csv/` exports.
