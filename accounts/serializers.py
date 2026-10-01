@@ -10,11 +10,16 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "github_login", "is_staff", "plan", "has_pro", "is_bot"]
+        fields = ["id", "email", "full_name", "github_login", "language", "is_staff", "plan", "has_pro", "is_bot"]
         read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "is_bot"]
 
     def validate_github_login(self, value):
         return value.strip().lstrip("@")
+
+    def validate_language(self, value):
+        from tasks.services import DEFAULT_NAMES
+
+        return value if value in DEFAULT_NAMES else "en"
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -22,8 +27,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "password"]
+        fields = ["id", "email", "full_name", "password", "language"]
         read_only_fields = ["id"]
+        extra_kwargs = {"language": {"required": False}}
+
+    def validate_language(self, value):
+        from tasks.services import DEFAULT_NAMES
+
+        return value if value in DEFAULT_NAMES else "en"
 
     def validate_email(self, value):
         if User.objects.filter(email__iexact=value).exists():

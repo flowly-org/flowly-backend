@@ -36,6 +36,8 @@ class User(AbstractUser):
 
     plan = models.CharField(max_length=10, choices=Plan.choices, default=Plan.FREE)
     plan_expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry.")
+    #: UI language (en, it, es, fr, de, pt); also used for default names in new workspaces.
+    language = models.CharField(max_length=5, default="en")
     #: Service identity behind a workspace MCP token (not a person; can't sign in).
     is_bot = models.BooleanField(default=False)
     github_login = models.CharField(

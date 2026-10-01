@@ -21,7 +21,8 @@ from instance import conf
 
 from .models import OAuthClient, OAuthCode, OAuthGrant, digest
 
-SCOPES = ["mcp"]
+#: mcp = the MCP endpoints; api = the REST API (used by Flowly's own desktop/mobile clients).
+SCOPES = ["mcp", "api"]
 
 
 def api_base():
@@ -169,6 +170,11 @@ def check_authorize_params(params):
     return client, None
 
 
+def granted_scope(params) -> str:
+    requested = (params.get("scope") or "mcp").split()
+    return " ".join(s for s in SCOPES if s in requested) or "mcp"
+
+
 class AuthorizeView(APIView):
     """Used by the consent page: GET describes the request, POST {…params, decision} returns the redirect."""
 
@@ -185,7 +191,8 @@ class AuthorizeView(APIView):
                 return Response({"detail": "You aren't a member of that workspace."}, status=403)
             workspace = {"id": ws.workspace_id, "name": ws.workspace.name}
         return Response({"client": {"name": client.name or host, "uri": client.uri, "logo_uri": client.logo_uri,
-                                    "redirect_host": host}, "user": request.user.email, "workspace": workspace})
+                                    "redirect_host": host}, "user": request.user.email, "workspace": workspace,
+                         "scopes": granted_scope(request.query_params).split()})
 
     def post(self, request):
         params = request.data
@@ -202,7 +209,7 @@ class AuthorizeView(APIView):
             return Response({"detail": "You aren't a member of that workspace."}, status=403)
         code = OAuthCode.issue(
             client=client, user=request.user, redirect_uri=redirect, code_challenge=params["code_challenge"],
-            scope="mcp", resource=params.get("resource") or "",
+            scope=granted_scope(params), resource=params.get("resource") or "",
         )
         return Response({"redirect": redirect + sep + urlencode({"code": code, **state, "iss": api_base()})})
 

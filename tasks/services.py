@@ -9,6 +9,15 @@ DEFAULT_PRIORITIES = [
     ("Medium", "#d97706"),
     ("High", "#dc2626"),
 ]
+#: Names of the built-in groups and their default tags, per language.
+DEFAULT_NAMES = {
+    "en": ("Status", "Priority", ["To do", "In progress", "Done"], ["Low", "Medium", "High"]),
+    "it": ("Stato", "Priorità", ["Da fare", "In corso", "Fatto"], ["Bassa", "Media", "Alta"]),
+    "es": ("Estado", "Prioridad", ["Por hacer", "En curso", "Hecho"], ["Baja", "Media", "Alta"]),
+    "fr": ("Statut", "Priorité", ["À faire", "En cours", "Terminé"], ["Basse", "Moyenne", "Haute"]),
+    "de": ("Status", "Priorität", ["Zu erledigen", "In Arbeit", "Erledigt"], ["Niedrig", "Mittel", "Hoch"]),
+    "pt": ("Estado", "Prioridade", ["A fazer", "Em curso", "Feito"], ["Baixa", "Média", "Alta"]),
+}
 
 
 def _free_name(TagGroup, workspace, name):
@@ -19,7 +28,7 @@ def _free_name(TagGroup, workspace, name):
     return candidate
 
 
-def create_system_groups(workspace, TagGroup=None, Tag=None):
+def create_system_groups(workspace, TagGroup=None, Tag=None, language="en"):
     """Create the STATUS and PRIORITY groups with default tags.
 
     Model classes can be passed in so data migrations can use historical models.
@@ -28,21 +37,22 @@ def create_system_groups(workspace, TagGroup=None, Tag=None):
     if TagGroup is None or Tag is None:
         from .models import Tag, TagGroup
 
+    status_name, priority_name, status_names, priority_names = DEFAULT_NAMES.get(language, DEFAULT_NAMES["en"])
     status_group = TagGroup.objects.create(
-        workspace=workspace, name=_free_name(TagGroup, workspace, "Status"), kind="status", position=-2
+        workspace=workspace, name=_free_name(TagGroup, workspace, status_name), kind="status", position=-2
     )
     priority_group = TagGroup.objects.create(
-        workspace=workspace, name=_free_name(TagGroup, workspace, "Priority"), kind="priority", position=-1
+        workspace=workspace, name=_free_name(TagGroup, workspace, priority_name), kind="priority", position=-1
     )
     statuses = [
         Tag.objects.create(
-            workspace=workspace, group=status_group, name=name, color=color, is_done=done, position=i
+            workspace=workspace, group=status_group, name=label, color=color, is_done=done, position=i
         )
-        for i, (name, color, done) in enumerate(DEFAULT_STATUSES)
+        for i, ((_, color, done), label) in enumerate(zip(DEFAULT_STATUSES, status_names))
     ]
     priorities = [
-        Tag.objects.create(workspace=workspace, group=priority_group, name=name, color=color, position=i)
-        for i, (name, color) in enumerate(DEFAULT_PRIORITIES)
+        Tag.objects.create(workspace=workspace, group=priority_group, name=label, color=color, position=i)
+        for i, ((_, color), label) in enumerate(zip(DEFAULT_PRIORITIES, priority_names))
     ]
     return statuses, priorities
 

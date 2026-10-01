@@ -11,7 +11,7 @@ def create_workspace(name, owner):
     Membership.objects.create(workspace=workspace, user=owner, role=Membership.Role.OWNER)
     from tasks.services import create_system_groups
 
-    create_system_groups(workspace)
+    create_system_groups(workspace, language=getattr(owner, "language", "en") or "en")
     return workspace
 
 

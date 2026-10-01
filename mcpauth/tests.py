@@ -194,3 +194,34 @@ class WorkspaceEndpointTests(TestCase):
                                                     "redirect_uri": params["redirect_uri"], "code_verifier": verifier}).json()
         self.assertEqual(self.call(f"/api/mcp/w/{self.team['id']}/", tok["access_token"], "list_tasks").status_code, 200)
         self.assertEqual(self.call("/api/mcp/", tok["access_token"], "list_tasks").status_code, 401)
+
+
+@override_settings(PUBLIC_URL="https://app.flowly.test", API_PUBLIC_URL="https://api.flowly.test")
+class ApiScopeTests(TestCase):
+    def setUp(self):
+        conf.clear_cache()
+        self.web = APIClient()
+        auth = self.web.post("/api/auth/register/", {"email": "d@example.com", "password": "s3cure-Passw0rd"}).data
+        self.web.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+
+    def tearDown(self):
+        conf.clear_cache()
+
+    def token(self, scope):
+        reg = APIClient().post("/api/oauth/register", {"client_name": "Flowly Desktop", "redirect_uris": ["http://127.0.0.1:47123/callback"]}, format="json").json()
+        verifier = secrets.token_urlsafe(48)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        params = {"client_id": reg["client_id"], "redirect_uri": "http://127.0.0.1:47123/callback", "response_type": "code",
+                  "code_challenge": challenge, "code_challenge_method": "S256", "scope": scope, "decision": "allow"}
+        self.assertEqual(self.web.get("/api/oauth/authorize/", params).data["scopes"], scope.split())
+        code = parse_qs(urlparse(self.web.post("/api/oauth/authorize/", params, format="json").data["redirect"]).query)["code"][0]
+        return APIClient().post("/api/oauth/token", {"grant_type": "authorization_code", "code": code, "client_id": reg["client_id"],
+                                                     "redirect_uri": params["redirect_uri"], "code_verifier": verifier}).json()
+
+    def test_api_scope_unlocks_rest(self):
+        tok = self.token("mcp api")
+        self.assertEqual(tok["scope"], "mcp api")
+        res = APIClient().get("/api/my/timer/", HTTP_AUTHORIZATION=f"Bearer {tok['access_token']}")
+        self.assertEqual(res.status_code, 200)
+        only_mcp = self.token("mcp")
+        self.assertEqual(APIClient().get("/api/my/timer/", HTTP_AUTHORIZATION=f"Bearer {only_mcp['access_token']}").status_code, 401)

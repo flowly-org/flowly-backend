@@ -235,6 +235,17 @@ class StatusAndPriorityTagTests(TeamWorkspaceTestCase):
         self.assertEqual(self.client.delete(f"{self.base}/tags/{statuses[-1]['id']}/").status_code, 400)
 
 
+class LocalizedDefaultsTests(ApiTestCase):
+    def test_new_workspaces_use_the_users_language(self):
+        res = self.client.post("/api/auth/register/", {"email": "it@example.com", "password": "s3cure-Passw0rd", "language": "it"})
+        self.login_as(res.data)
+        ws = self.client.get("/api/workspaces/").data[0]
+        groups = {g["kind"]: g for g in self.client.get(f"/api/workspaces/{ws['id']}/tag-groups/").data}
+        self.assertEqual(groups["status"]["name"], "Stato")
+        self.assertEqual([t["name"] for t in groups["status"]["tags"]], ["Da fare", "In corso", "Fatto"])
+        self.assertEqual(self.client.patch("/api/auth/me/", {"language": "xx"}, format="json").data["language"], "en")
+
+
 class CrossWorkspaceTests(ApiTestCase):
     def test_my_tasks_and_context_span_only_my_workspaces(self):
         alice = self.register("alice@example.com")
