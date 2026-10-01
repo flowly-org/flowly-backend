@@ -45,12 +45,23 @@ STOPWORDS = set(
 
 
 def home_places(home: str) -> list[str]:
-    """'Bologna, Italy; Imola' → ['bologna', 'imola']: the first part of each place, i.e. the town."""
+    """Town names (and the street) of each home, lowercased.
+
+    'Bologna, Italy; Imola' → ['bologna', 'imola'];
+    'Via Donato Creti 32, 40128 Bologna BO, Italy' → ['via donato creti', 'bologna'].
+    The last part of an address is the country and is left out: it would make the whole country "home".
+    """
     places = []
-    for part in re.split(r"[;\n]", home or ""):
-        town = part.split(",")[0].strip().lower()
-        if len(town) >= 2:
-            places.append(town)
+    for place in re.split(r"[;\n]", home or ""):
+        parts = [p.strip() for p in place.split(",") if p.strip()]
+        if len(parts) >= 2:
+            parts = parts[:-1]
+        for part in parts:
+            # Drop postcodes, house numbers and province codes ("40128", "32", "BO").
+            words = [w for w in part.split() if not any(c.isdigit() for c in w) and not (len(w) == 2 and w.isupper())]
+            name = " ".join(words).lower()
+            if len(name) >= 3 and name not in places:
+                places.append(name)
     return places
 
 

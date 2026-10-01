@@ -33,6 +33,10 @@ class ClassifyTests(TestCase):
         self.assertEqual(c("Holidays", "Sardinia", days=7), "travel")
         self.assertEqual(prep.classify("Workshop", "Rue X, Paris, France", "", "", 1), "")  # home unknown
         self.assertEqual(prep.home_places("Bologna, Italy; Imola"), ["bologna", "imola"])
+        street = "Via Donato Creti 32, 40128 Bologna BO, Italy"
+        self.assertEqual(prep.home_places(street), ["via donato creti", "bologna"])
+        self.assertEqual(prep.classify("Dentist", "Via Rizzoli 3, 40125 Bologna BO, Italy", "", street, 1), "")
+        self.assertEqual(prep.classify("Workshop", "Corso Como 1, 20154 Milano MI, Italy", "", street, 1), "away")
 
 
 def id_token(email):
