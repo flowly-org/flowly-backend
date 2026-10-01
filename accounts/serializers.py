@@ -10,8 +10,17 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "github_login", "language", "is_staff", "plan", "has_pro", "is_bot"]
+        fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro", "is_bot"]
         read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "is_bot"]
+
+    def update(self, instance, validated_data):
+        home_changed = "home_location" in validated_data and validated_data["home_location"] != instance.home_location
+        user = super().update(instance, validated_data)
+        if home_changed:
+            from calendars.sync import reclassify
+
+            reclassify(user)
+        return user
 
     def validate_github_login(self, value):
         return value.strip().lstrip("@")

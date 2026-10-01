@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "mcpserver",
     "mcpauth",
     "timetracking",
+    "calendars",
 ]
 
 MIDDLEWARE = [
@@ -155,6 +156,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")
 
 # LLM: the platform OpenRouter key serves Pro users; workspaces can bring their own provider.

@@ -74,7 +74,8 @@ def system_prompt(user, now: datetime) -> str:
         f"{language_rule(user)}\n"
         f"Now: {now:%A %d %B %Y, %H:%M} ({profile.timezone}). Today's date is {now.date().isoformat()}.\n"
         "Use the tools to look up and change tasks; never invent tasks or ids. When you change something, say what you "
-        "changed. Keep replies short and friendly, as plain text for a chat app: short lines, '•' bullets, no markdown "
+        "changed. Calendar events (list_events) are background, not tasks; when one needs preparation, offer to create "
+        "a task with create_event_task, and record answers about events with mark_event. Keep replies short and friendly, as plain text for a chat app: short lines, '•' bullets, no markdown "
         "headings or tables. If something is ambiguous, ask one brief question.\n"
         f"What you remember about {name}:\n{memory}"
     )
@@ -132,6 +133,13 @@ def plain_brief(user, now) -> str:
         lines.append(f"• {task.title} — {task.workspace.name}{extra}")
     if due:
         lines.append(f"{t('brief_due', code)}: " + ", ".join(task.title for task in due))
+    from calendars import concierge as cal
+    from calendars.sync import user_tz
+
+    upcoming = cal.plain_lines(user, today, user_tz(user))
+    if upcoming:
+        lines.append(t("brief_prep", code) + ":")
+        lines += upcoming
     return "\n".join(lines)
 
 
@@ -144,16 +152,20 @@ def brief(user) -> str:
     data = toolbox.tool_list_tasks("today", include_overdue=True)
     due = toolbox._tasks().filter(assignee=user, due_date=now.date(), status__is_done=False)
     due_text = "\n".join(describe(t, now.date()) for t in due) or "none"
+    from calendars import concierge as cal
+
+    calendar = cal.brief_context(user, now.date(), now.tzinfo, toolbox._tasks())
+    calendar_text = f"\n\n{cal.BRIEF_RULES}\n{calendar}" if calendar else ""
     messages = [
         {"role": "system", "content": system_prompt(user, now)},
         {"role": "user", "content": (
             "Write my morning brief for today. Start with a one-line greeting, then the plan grouped by workspace or "
             "project, urgent and carried-over items first, then anything due today. Max ~12 lines. Suggest a sensible "
-            f"first task.\n\nTasks for today:\n{data}\n\nDue today:\n{due_text}"
+            f"first task.\n\nTasks for today:\n{data}\n\nDue today:\n{due_text}{calendar_text}"
         )},
     ]
     try:
-        text = run(user, messages, tools=False, max_tokens=600)
+        text = run(user, messages, tools=False, max_tokens=800 if calendar else 600)
     except (DeliveryError, LLMUnavailable) as exc:
         log.warning("Brief fell back to plain text for %s: %s", user.pk, exc)
         return plain_brief(user, now)

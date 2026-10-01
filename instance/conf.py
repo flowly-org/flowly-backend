@@ -50,6 +50,7 @@ SPECS = [
     Spec("GOOGLE_CLIENT_ID", "Documents", "Google OAuth client id", "Web client; authorised JS origin = the app URL.", public=True),
     Spec("GOOGLE_API_KEY", "Documents", "Google API key (browser)", "Restricted to the Picker API and your app URL.", public=True),
     Spec("GOOGLE_APP_ID", "Documents", "Google app id", "Your Google Cloud project number.", public=True),
+    Spec("GOOGLE_CLIENT_SECRET", "Documents", "Google OAuth client secret", "Enables Google Calendar. Add <API URL>/api/calendar/google/callback/ as an authorised redirect URI and enable the Calendar API.", secret=True),
     Spec("MICROSOFT_CLIENT_ID", "Documents", "Microsoft Entra client id", "SPA app; redirect URI = the app URL + /.", public=True),
     Spec("INTEGRATIONS_ALLOW_PRIVATE_URLS", "Integrations", "Allow private network URLs", "Lets webhooks and AI endpoints reach private IPs (only for self-hosted, trusted setups).", "bool"),
 ]

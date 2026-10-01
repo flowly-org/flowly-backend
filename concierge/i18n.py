@@ -37,6 +37,10 @@ STRINGS = {
         "en": "I've cleared what I remembered about you.", "it": "Ho cancellato ciò che ricordavo di te.", "es": "He borrado lo que recordaba de ti.",
         "fr": "J'ai effacé ce que je savais de toi.", "de": "Ich habe gelöscht, was ich mir über dich gemerkt hatte.", "pt": "Apaguei o que me lembrava de ti.",
     },
+    "brief_prep": {
+        "en": "Coming up, may need preparation", "it": "In arrivo, forse da preparare", "es": "Próximamente, quizá requiere preparación",
+        "fr": "À venir, peut-être à préparer", "de": "Demnächst, braucht evtl. Vorbereitung", "pt": "Em breve, talvez precise de preparação",
+    },
     "pro_only": {
         "en": "The concierge is a Flowly Pro feature.", "it": "Il concierge è una funzione di Flowly Pro.", "es": "El conserje es una función de Flowly Pro.",
         "fr": "Le concierge est une fonctionnalité Flowly Pro.", "de": "Der Concierge ist eine Flowly-Pro-Funktion.", "pt": "O concierge é uma funcionalidade Flowly Pro.",

@@ -87,6 +87,26 @@ class Toolbox:
         {"name": "add_comment", "description": "Add a comment to a task's discussion.",
          "parameters": {"type": "object", "required": ["task_id", "text"], "properties": {
              "task_id": {"type": "integer"}, "text": {"type": "string"}}}},
+        {"name": "list_events", "description": "List the user's calendar events (Google Calendar). They are background, "
+         "not tasks. Each line has an E-id, and for events that may need preparation the reason and linked tasks.",
+         "parameters": {"type": "object", "properties": {
+             "day": {"type": "string", "description": "First day: 'today', 'tomorrow' or YYYY-MM-DD. Default today."},
+             "days": {"type": "integer", "description": "How many days (default 1, max 60)."},
+             "prep_only": {"type": "boolean", "description": "Only events that may need preparation (next 3 weeks)."}}}},
+        {"name": "create_event_task", "description": "Create a preparation task for a calendar event (e.g. buy tickets, "
+         "book the train) and link it to the event. Due date defaults to the event day.",
+         "parameters": {"type": "object", "required": ["event_id", "title"], "properties": {
+             "event_id": {"type": "integer", "description": "The number after E."}, "title": {"type": "string"},
+             "workspace": {"type": "string"}, "project": {"type": "string"},
+             "day": {"type": "string", "description": "When to do it: 'today', 'tomorrow', 'backlog' or YYYY-MM-DD."}}}},
+        {"name": "link_event_task", "description": "Link an existing task to a calendar event (it covers the preparation).",
+         "parameters": {"type": "object", "required": ["event_id", "task_id"], "properties": {
+             "event_id": {"type": "integer"}, "task_id": {"type": "integer"}}}},
+        {"name": "mark_event", "description": "Record the user's answer about an event: 'confirmed' (it's still on), "
+         "'background' (nothing to prepare, stop asking), 'needed' (needs preparation) or 'auto'.",
+         "parameters": {"type": "object", "required": ["event_id", "decision"], "properties": {
+             "event_id": {"type": "integer"},
+             "decision": {"type": "string", "enum": ["confirmed", "background", "needed", "auto"]}}}},
         {"name": "remember", "description": "Save a lasting note about the user's preferences or context.",
          "parameters": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string"}}}},
     ]
@@ -249,6 +269,64 @@ class Toolbox:
         emit_comment(comment)
         notify.comment_added(comment)
         return f"Commented on #{task.id}."
+
+    def _event(self, event_id):
+        from calendars.models import CalendarEvent
+
+        event = CalendarEvent.objects.filter(user=self.user, pk=int(str(event_id).lstrip("Ee"))).first()
+        if event is None:
+            raise LookupError(f"No calendar event E{event_id}.")
+        return event
+
+    def tool_list_events(self, day="today", days=1, prep_only=False):
+        from calendars import concierge as cal
+        from calendars.sync import user_tz
+
+        if not self.user.calendar_accounts.exists():
+            return "No calendar connected (Settings → Calendars in Flowly)."
+        tz = user_tz(self.user)
+        if prep_only:
+            events = cal.prep_events(self.user, self.today)
+        else:
+            start = parse_day(day, self.today) or self.today
+            events = cal.window_events(self.user, start, max(1, min(int(days or 1), 60)))
+        return "\n".join(cal.line(e, tz, self.user, self._tasks()) for e in events[:80]) or "No events."
+
+    def tool_create_event_task(self, event_id, title, workspace="", project="", day="today"):
+        event = self._event(event_id)
+        ws = self._workspace(workspace)
+        data = {"title": title, "workspace": ws.id}
+        target = parse_day(day, self.today)
+        data["planned_date"] = target.isoformat() if target else None
+        if project:
+            p = ws.projects.filter(name__iexact=project).first() or ws.projects.filter(name__icontains=project).first()
+            if p is None:
+                raise LookupError(f'No project "{project}" in {ws.name}.')
+            data["project"] = p.id
+        from calendars.services import create_task
+        from rest_framework.exceptions import APIException
+
+        try:
+            task = create_task(event, self.user, data)
+        except APIException as exc:
+            raise ValueError(str(exc.detail)) from exc
+        return f"Created and linked to E{event.id}: " + describe(task, self.today)
+
+    def tool_link_event_task(self, event_id, task_id):
+        event = self._event(event_id)
+        task = self._task(task_id)
+        event.tasks.add(task)
+        return f"Linked #{task.id} to “{event.title}”."
+
+    def tool_mark_event(self, event_id, decision):
+        from calendars.services import decide
+
+        event = self._event(event_id)
+        if decision == "confirmed":
+            decide(event, confirmed=True)
+        else:
+            decide(event, prep=decision)
+        return f"“{event.title}”: {decision}."
 
     def tool_remember(self, note):
         profile = self.user.concierge

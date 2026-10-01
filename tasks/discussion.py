@@ -162,5 +162,6 @@ class PublicConfigView(APIView):
                 "mcp_url": f"{conf.get('API_PUBLIC_URL') or ''}/api/mcp/",
                 "google": google,
                 "microsoft": microsoft,
+                "calendar": {"google": bool(conf.get("GOOGLE_CLIENT_ID") and conf.get("GOOGLE_CLIENT_SECRET"))},
             }
         )

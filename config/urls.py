@@ -42,6 +42,7 @@ urlpatterns = [
     path("api/", include("workspaces.urls")),
     path("api/", include("integrations.urls")),
     path("api/", include("concierge.urls")),
+    path("api/", include("calendars.urls")),
     path("api/workspaces/<int:workspace_pk>/", include("tasks.urls")),
     path("api/workspaces/<int:workspace_pk>/", include("timetracking.urls")),
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

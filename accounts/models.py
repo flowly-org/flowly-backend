@@ -40,6 +40,8 @@ class User(AbstractUser):
     language = models.CharField(max_length=5, default="en")
     #: Service identity behind a workspace MCP token (not a person; can't sign in).
     is_bot = models.BooleanField(default=False)
+    #: Where the user lives, e.g. "Bologna, Italy" (several separated by ";"). Calendar events elsewhere need preparation.
+    home_location = models.CharField(max_length=200, blank=True)
     github_login = models.CharField(
         max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
     )
