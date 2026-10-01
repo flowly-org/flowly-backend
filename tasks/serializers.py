@@ -1,0 +1,145 @@
+from django.contrib.auth import get_user_model
+from django.db.models import Max
+from django.utils import timezone
+from rest_framework import serializers
+
+from .models import Project, Tag, TagGroup, Task
+
+User = get_user_model()
+
+
+class WorkspaceScopedSerializer(serializers.ModelSerializer):
+    """Restricts related-field querysets to the workspace in the serializer context."""
+
+    scoped_fields = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        workspace = self.context.get("workspace")
+        for field_name, queryset_fn in self.scoped_fields.items():
+            field = self.fields.get(field_name)
+            if field is None:
+                continue
+            target = field.child_relation if isinstance(field, serializers.ManyRelatedField) else field
+            target.queryset = queryset_fn(workspace) if workspace else target.queryset.none()
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    open_task_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Project
+        fields = ["id", "name", "description", "color", "archived", "position", "open_task_count", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_name(self, value):
+        qs = Project.objects.filter(workspace=self.context["workspace"], name__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A project with this name already exists.")
+        return value
+
+
+class TagSerializer(WorkspaceScopedSerializer):
+    scoped_fields = {"group": lambda ws: TagGroup.objects.filter(workspace=ws)}
+
+    class Meta:
+        model = Tag
+        fields = ["id", "name", "color", "group", "position"]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        group = attrs.get("group", self.instance.group if self.instance else None)
+        name = attrs.get("name", self.instance.name if self.instance else None)
+        qs = Tag.objects.filter(workspace=self.context["workspace"], group=group, name__iexact=name)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError({"name": "This tag already exists in that group."})
+        return attrs
+
+
+class TagGroupSerializer(serializers.ModelSerializer):
+    tags = TagSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TagGroup
+        fields = ["id", "name", "position", "tags"]
+        read_only_fields = ["id"]
+
+    def validate_name(self, value):
+        qs = TagGroup.objects.filter(workspace=self.context["workspace"], name__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("A tag group with this name already exists.")
+        return value
+
+
+class TaskSerializer(WorkspaceScopedSerializer):
+    scoped_fields = {
+        "project": lambda ws: Project.objects.filter(workspace=ws),
+        "assignee": lambda ws: User.objects.filter(memberships__workspace=ws),
+        "tags": lambda ws: Tag.objects.filter(workspace=ws),
+    }
+
+    project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
+    assignee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), allow_null=True, required=False)
+    tags = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True, required=False)
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = Task
+        fields = [
+            "id",
+            "title",
+            "description",
+            "status",
+            "priority",
+            "project",
+            "assignee",
+            "tags",
+            "planned_date",
+            "due_date",
+            "position",
+            "created_by",
+            "created_at",
+            "updated_at",
+            "completed_at",
+        ]
+        read_only_fields = ["id", "created_by", "created_at", "updated_at", "completed_at"]
+
+    def validate_tags(self, tags):
+        seen = {}
+        for tag in tags:
+            if tag.group_id is None:
+                continue
+            if tag.group_id in seen:
+                raise serializers.ValidationError(
+                    f'Only one tag per group: "{seen[tag.group_id].name}" and "{tag.name}" '
+                    f'are both in "{tag.group.name}".'
+                )
+            seen[tag.group_id] = tag
+        return tags
+
+    def _apply_status(self, validated_data, instance=None):
+        status = validated_data.get("status")
+        if status is None:
+            return
+        if status == Task.Status.DONE and (instance is None or instance.status != Task.Status.DONE):
+            validated_data["completed_at"] = timezone.now()
+        elif status != Task.Status.DONE:
+            validated_data["completed_at"] = None
+
+    def create(self, validated_data):
+        workspace = self.context["workspace"]
+        if "position" not in validated_data:
+            top = Task.objects.filter(workspace=workspace).aggregate(m=Max("position"))["m"] or 0
+            validated_data["position"] = top + 1024
+        self._apply_status(validated_data)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        self._apply_status(validated_data, instance)
+        return super().update(instance, validated_data)
