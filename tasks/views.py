@@ -181,6 +181,7 @@ class MyContextView(generics.GenericAPIView):
                     "id": ws.id,
                     "name": ws.name,
                     "color": ws.color,
+                    "time_tracking": ws.time_tracking,
                     "my_role": membership.role,
                     "projects": ProjectSerializer(projects, many=True, context=context).data,
                     "tag_groups": TagGroupSerializer(groups, many=True, context=context).data,

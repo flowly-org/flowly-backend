@@ -27,4 +27,5 @@ class WorkspaceScopedMixin:
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["workspace"] = getattr(self, "workspace", None)
+        context["membership"] = getattr(self, "membership", None)
         return context

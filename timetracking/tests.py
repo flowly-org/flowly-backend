@@ -123,6 +123,31 @@ class TimeTrackingTests(APITestCase):
         line = inv["lines"][0]
         self.assertEqual((line["hours"], line["amount"]), ("1.50", "120.00"))
 
+    def test_project_opt_outs_from_projects_panel(self):
+        res = self.client.patch(f"{self.base}/projects/{self.site['id']}/", {"time_tracking": False}, format="json")
+        self.assertFalse(res.data["time_tracking"])
+        self.assertEqual(self.client.post("/api/my/timer/", {"action": "start", "workspace": self.ws["id"], "task": self.task["id"]}, format="json").status_code, 400)
+        start = timezone.now().isoformat()
+        self.assertEqual(self.client.post(f"{self.base}/time-entries/", {"task": self.task["id"], "started_at": start, "duration_seconds": 600}, format="json").status_code, 400)
+        self.client.patch(f"{self.base}/projects/{self.site['id']}/", {"time_tracking": True}, format="json")
+        self.log(30, task=self.task["id"])
+        # Billing opt-out from the same panel (owners/admins only).
+        res = self.client.patch(f"{self.base}/projects/{self.site['id']}/", {"billable": False}, format="json")
+        self.assertFalse(res.data["billable"])
+        self.assertFalse(TimeEntry.objects.get().billable)
+        self.assertEqual(self.client.get(f"{self.base}/billing/").data["projects"][0]["mode"], "off")
+        self.as_user(self.bob)
+        self.assertEqual(self.client.patch(f"{self.base}/projects/{self.site['id']}/", {"billable": True}, format="json").status_code, 403)
+
+    def test_workspace_time_tracking_switch(self):
+        res = self.client.patch(f"{self.base}/", {"time_tracking": False}, format="json")
+        self.assertFalse(res.data["time_tracking"])
+        self.assertEqual(self.client.post("/api/my/timer/", {"action": "start", "workspace": self.ws["id"], "description": "x"}, format="json").status_code, 400)
+        res = self.client.post(f"{self.base}/time-entries/", {"started_at": timezone.now().isoformat(), "duration_seconds": 60}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.client.patch(f"{self.base}/", {"time_tracking": True}, format="json")
+        self.assertTrue(self.client.get(f"{self.base}/").data["time_tracking"])
+
     def test_rounding(self):
         self.client.patch(f"{self.base}/billing/", {"enabled": True, "default_rate": "60.00", "rounding_minutes": 15}, format="json")
         self.log(7, project=self.internal["id"])  # rounds up to 15 min

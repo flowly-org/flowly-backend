@@ -34,9 +34,11 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         workspace = create_workspace(serializer.validated_data["name"], self.request.user)
-        if serializer.validated_data.get("color"):
-            workspace.color = serializer.validated_data["color"]
-            workspace.save(update_fields=["color"])
+        extra = {k: serializer.validated_data[k] for k in ("color", "time_tracking") if k in serializer.validated_data}
+        if extra:
+            for k, v in extra.items():
+                setattr(workspace, k, v)
+            workspace.save(update_fields=list(extra))
         serializer.instance = workspace
 
     def create(self, request, *args, **kwargs):

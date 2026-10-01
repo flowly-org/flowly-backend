@@ -13,6 +13,14 @@ from workspaces.models import Workspace
 from .models import Invoice, InvoiceLine, ProjectBilling, TimeEntry, WorkspaceBilling, money, project_billing, rate_for, rounded_seconds
 
 
+def ensure_tracking(project, workspace=None):
+    workspace = workspace or (project.workspace if project is not None else None)
+    if workspace is not None and not workspace.time_tracking:
+        raise ValidationError({"detail": f"Time tracking is turned off in “{workspace.name}”."})
+    if project is not None and not project.time_tracking:
+        raise ValidationError({"detail": f"Time tracking is turned off for the project “{project.name}”."})
+
+
 def default_billable(workspace, project) -> bool:
     """Whether new time is billable. Independent of billing being enabled, so enabling it later
     bills time already tracked (amounts are only computed while billing is on)."""
@@ -47,8 +55,9 @@ def stop_timer(user, at=None):
 
 @transaction.atomic
 def start_timer(user, workspace: Workspace, task: Task | None = None, description="", project=None):
-    stop_timer(user)
     project = task.project if task is not None else project
+    ensure_tracking(project, workspace)
+    stop_timer(user)
     return TimeEntry.objects.create(
         workspace=workspace, user=user, task=task, project=project, description=description[:500],
         started_at=timezone.now(), billable=default_billable(workspace, project),
@@ -97,7 +106,7 @@ def report(workspace, entries, group: str):
 @transaction.atomic
 def create_invoice(workspace, user, *, project, period_start: date, period_end: date, group_by="task"):
     billing = WorkspaceBilling.objects.select_for_update().get_or_create(workspace=workspace)[0]
-    if not billing.enabled:
+    if not billing.enabled or not workspace.time_tracking:
         raise ValidationError({"detail": "Billing isn't enabled for this workspace."})
     entries = (
         TimeEntry.objects.select_for_update(of=("self",))

@@ -57,6 +57,12 @@ class TimeEntrySerializer(serializers.ModelSerializer):
         task = attrs.get("task")
         if task is not None and "project" not in attrs:
             attrs["project"] = task.project
+        project = attrs.get("project", instance.project if instance else None)
+        ws = self.context.get("workspace")
+        if ws is not None and not ws.time_tracking:
+            raise serializers.ValidationError({"detail": f"Time tracking is turned off in “{ws.name}”."})
+        if project is not None and not project.time_tracking:
+            raise serializers.ValidationError({"detail": f"Time tracking is turned off for the project “{project.name}”."})
         return attrs
 
 

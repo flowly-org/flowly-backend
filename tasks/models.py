@@ -16,6 +16,8 @@ class Project(models.Model):
     description = models.TextField(blank=True)
     color = models.CharField(max_length=7, default="#4f46e5", validators=[hex_color])
     archived = models.BooleanField(default=False)
+    #: Off = no timers or logged time on this project's tasks.
+    time_tracking = models.BooleanField(default=True)
     position = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 

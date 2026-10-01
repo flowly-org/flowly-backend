@@ -12,6 +12,8 @@ class Workspace(models.Model):
     color = models.CharField(
         max_length=7, default="#4f46e5", validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a hex color like #4f46e5.")]
     )
+    #: Off = no time tracking (and so no billing) anywhere in the workspace.
+    time_tracking = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )

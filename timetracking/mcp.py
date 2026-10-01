@@ -36,8 +36,13 @@ def _workspace_for(user, task_id=None, workspace="", scope=None):
 
 
 def start_timer(user, task_id=None, description="", workspace="", scope=None):
+    from rest_framework.exceptions import ValidationError
+
     ws, task = _workspace_for(user, task_id, workspace, scope)
-    services.start_timer(user, ws, task, description)
+    try:
+        services.start_timer(user, ws, task, description)
+    except ValidationError as exc:
+        raise ValueError(exc.detail.get("detail") if isinstance(exc.detail, dict) else str(exc.detail)) from exc
     return f"Timer started on {task.title if task else description or 'untitled work'} ({ws.name})."
 
 
@@ -54,6 +59,10 @@ def log_time(user, minutes, task_id=None, description="", day="today", workspace
     if not 1 <= minutes <= 24 * 60:
         raise ValueError("minutes must be between 1 and 1440.")
     ws, task = _workspace_for(user, task_id, workspace, scope)
+    if not ws.time_tracking:
+        raise ValueError(f"Time tracking is turned off in “{ws.name}”.")
+    if task is not None and task.project_id and not task.project.time_tracking:
+        raise ValueError(f"Time tracking is turned off for the project “{task.project.name}”.")
     on = timezone.localdate() if day == "today" else (timezone.localdate() - timedelta(days=1) if day == "yesterday" else date.fromisoformat(day))
     start = timezone.make_aware(timezone.datetime.combine(on, timezone.datetime.min.time()).replace(hour=9))
     project = task.project if task else None

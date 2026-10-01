@@ -27,10 +27,44 @@ class WorkspaceScopedSerializer(serializers.ModelSerializer):
 
 class ProjectSerializer(serializers.ModelSerializer):
     open_task_count = serializers.IntegerField(read_only=True)
+    #: False when the project opted out of billing (ProjectBilling.mode == "off"). Owners/admins can change it.
+    # None default: a form-encoded request without the field must not opt the project out of billing.
+    billable = serializers.BooleanField(required=False, allow_null=True, default=None)
+    # Explicit default: form-encoded requests that omit a boolean would otherwise read it as False.
+    time_tracking = serializers.BooleanField(required=False, default=True)
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        try:
+            data["billable"] = obj.billing.mode != "off"
+        except Exception:
+            data["billable"] = True
+        return data
+
+    def save(self, **kwargs):
+        billable = self.validated_data.pop("billable", None)
+        project = super().save(**kwargs)
+        if billable is not None:
+            from timetracking.models import ProjectBilling, TimeEntry
+
+            membership = self.context.get("membership")
+            if membership is not None and not membership.can_manage:
+                from rest_framework.exceptions import PermissionDenied
+
+                raise PermissionDenied("Only workspace owners and admins can change billing.")
+            pb, _ = ProjectBilling.objects.get_or_create(project=project)
+            if not billable:
+                pb.mode = ProjectBilling.Mode.OFF
+                TimeEntry.objects.filter(project=project, invoice__isnull=True).update(billable=False)
+            elif pb.mode == ProjectBilling.Mode.OFF:
+                pb.mode = ProjectBilling.Mode.INHERIT
+            pb.save()
+        return project
 
     class Meta:
         model = Project
-        fields = ["id", "name", "description", "color", "archived", "position", "open_task_count", "created_at"]
+        fields = ["id", "name", "description", "color", "archived", "time_tracking", "billable", "position",
+                  "open_task_count", "created_at"]
         read_only_fields = ["id", "created_at"]
 
     def validate_name(self, value):
