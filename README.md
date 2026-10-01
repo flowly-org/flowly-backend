@@ -110,3 +110,16 @@ an instance admin (`is_staff`) opens Integrations → GitHub → **Create GitHub
 and is sent back; credentials are stored in the `GitHubApp` table. Set `PUBLIC_URL` first: GitHub
 uses it for the webhook (`<PUBLIC_URL>/api/integrations/github/webhook/`) and redirect URLs.
 Each GitHub integration is then installed on an account/repos via **Install on GitHub**.
+
+## Discussion & attachments
+
+`workspaces/{ws}/tasks/{task}/comments/` (any member can comment; authors edit/delete their own,
+admins can delete any) and `…/attachments/` (`kind`: `file` multipart upload, `link`, `google_drive`,
+`onedrive`; `GET …/attachments/{id}/download/` returns a short-lived URL). Comments on tasks linked to
+GitHub issues sync both ways. `GET /api/config/` tells the client which sources are enabled.
+
+| Setting | Enables |
+|---|---|
+| `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `S3_ADDRESSING_STYLE` | File uploads to any S3-compatible bucket (private; downloads use 5-minute signed URLs, so the endpoint must be reachable by browsers). `ATTACHMENT_MAX_MB` (default 25). |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_API_KEY`, `GOOGLE_APP_ID` | Google Drive picker (OAuth client of type *Web*, authorised JS origin = your site; Picker API enabled; app id = project number). Scope `drive.file`; Flowly stores only links. |
+| `MICROSOFT_CLIENT_ID` | OneDrive / SharePoint picker (Entra app registration, SPA platform with your site's origin + `/` as redirect URI). |

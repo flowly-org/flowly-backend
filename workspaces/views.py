@@ -32,7 +32,11 @@ class WorkspaceViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        serializer.instance = create_workspace(serializer.validated_data["name"], self.request.user)
+        workspace = create_workspace(serializer.validated_data["name"], self.request.user)
+        if serializer.validated_data.get("color"):
+            workspace.color = serializer.validated_data["color"]
+            workspace.save(update_fields=["color"])
+        serializer.instance = workspace
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

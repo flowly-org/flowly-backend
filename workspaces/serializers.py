@@ -14,7 +14,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Workspace
-        fields = ["id", "name", "created_at", "my_role", "member_count"]
+        fields = ["id", "name", "color", "created_at", "my_role", "member_count"]
         read_only_fields = ["id", "created_at"]
 
     def get_my_role(self, obj):

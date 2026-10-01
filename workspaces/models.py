@@ -1,9 +1,17 @@
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
+
+
+WORKSPACE_COLORS = ["#4f46e5", "#0ea5e9", "#14b8a6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#ec4899", "#a855f7", "#64748b"]
 
 
 class Workspace(models.Model):
     name = models.CharField(max_length=120)
+    #: Brand colour of the workspace; tints the Flowly logo and favicon while it's open.
+    color = models.CharField(
+        max_length=7, default="#4f46e5", validators=[RegexValidator(r"^#[0-9a-fA-F]{6}$", "Use a hex color like #4f46e5.")]
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )

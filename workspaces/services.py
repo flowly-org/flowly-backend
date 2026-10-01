@@ -1,11 +1,13 @@
 from django.db import transaction
 
-from .models import Invitation, Membership, Workspace
+from .models import WORKSPACE_COLORS, Invitation, Membership, Workspace
 
 
 @transaction.atomic
 def create_workspace(name, owner):
-    workspace = Workspace.objects.create(name=name, created_by=owner)
+    # Cycle through the palette so a user's workspaces start out distinguishable.
+    count = Membership.objects.filter(user=owner).count()
+    workspace = Workspace.objects.create(name=name, created_by=owner, color=WORKSPACE_COLORS[count % len(WORKSPACE_COLORS)])
     Membership.objects.create(workspace=workspace, user=owner, role=Membership.Role.OWNER)
     from tasks.services import create_system_groups
 

@@ -142,6 +142,7 @@ class MyContextView(generics.GenericAPIView):
             {
                 "id": serializers.IntegerField(),
                 "name": serializers.CharField(),
+                "color": serializers.CharField(),
                 "my_role": serializers.CharField(),
                 "projects": ProjectSerializer(many=True),
                 "tag_groups": TagGroupSerializer(many=True),
@@ -171,6 +172,7 @@ class MyContextView(generics.GenericAPIView):
                 {
                     "id": ws.id,
                     "name": ws.name,
+                    "color": ws.color,
                     "my_role": membership.role,
                     "projects": ProjectSerializer(projects, many=True, context=context).data,
                     "tag_groups": TagGroupSerializer(groups, many=True, context=context).data,
