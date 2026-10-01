@@ -19,12 +19,13 @@ class DeliverySerializer(serializers.ModelSerializer):
 class IntegrationSerializer(serializers.ModelSerializer):
     project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
     info = serializers.SerializerMethodField()
+    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True, help_text="AI providers: stored encrypted; blank keeps the current key.")
     last_delivery = serializers.SerializerMethodField()
 
     class Meta:
         model = Integration
         fields = [
-            "id", "kind", "name", "project", "enabled", "config", "token", "secret",
+            "id", "kind", "name", "project", "enabled", "config", "api_key", "token", "secret",
             "info", "last_delivery", "created_at",
         ]
         read_only_fields = ["id", "token", "secret", "info", "last_delivery", "created_at"]
@@ -51,4 +52,9 @@ class IntegrationSerializer(serializers.ModelSerializer):
         if not isinstance(config, dict):
             raise serializers.ValidationError({"config": "Must be an object."})
         attrs["config"] = REGISTRY[kind].clean_config(config, self.instance)
+        api_key = attrs.pop("api_key", None)
+        if api_key:
+            from .crypto import encrypt
+
+            attrs["credentials"] = {**(self.instance.credentials if self.instance else {}), "api_key": encrypt(api_key.strip())}
         return attrs

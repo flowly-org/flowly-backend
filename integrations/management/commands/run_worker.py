@@ -4,11 +4,12 @@ import time
 from django.core.management.base import BaseCommand
 from django.db import close_old_connections
 
+from concierge.jobs import tick as concierge_tick
 from integrations.worker import process_due
 
 
 class Command(BaseCommand):
-    help = "Send pending integration deliveries (webhooks, Slack, GitHub) with retries."
+    help = "Send integration deliveries with retries, and run the concierge (Telegram alerts, polling, briefs)."
 
     def add_arguments(self, parser):
         parser.add_argument("--interval", type=float, default=2.0, help="Seconds to sleep when idle.")
@@ -27,6 +28,7 @@ class Command(BaseCommand):
         while not stopping:
             close_old_connections()
             done = process_due()
+            concierge_tick()
             if once:
                 break
             if not done:

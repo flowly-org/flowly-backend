@@ -90,8 +90,11 @@ class CommentViewSet(TaskChildMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         from integrations.events import emit_comment
 
+        from concierge import notify
+
         comment = serializer.save(task=self.task, author=self.request.user)
         emit_comment(comment)
+        notify.comment_added(comment)
 
     def perform_update(self, serializer):
         comment = serializer.instance

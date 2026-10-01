@@ -85,9 +85,12 @@ def upsert_task(integration: Integration, fields: dict, *, external_id=None, url
     `fields` holds model values (title, description, status, priority, assignee, planned_date, due_date).
     `tags`, when given, replaces the task's free/custom tags. Returns (task, created).
     """
+    from concierge import notify
+
     task = linked_task(integration, external_id) if external_id else None
     created = task is None
     before = None if created else snapshot(task)
+    before_light = None if created else notify.light(task)
 
     if created:
         top = Task.objects.filter(workspace=integration.workspace_id).aggregate(m=Max("position"))["m"] or 0
@@ -115,6 +118,7 @@ def upsert_task(integration: Integration, fields: dict, *, external_id=None, url
         ExternalLink.objects.filter(integration=integration, external_id=external_id).update(url=url)
 
     emit(before, task, origin=integration)
+    notify.task_changed(before_light, task, source=integration.get_kind_display())
     return task, created
 
 

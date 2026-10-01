@@ -5,6 +5,7 @@ from rest_framework import generics, serializers, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from concierge import notify
 from integrations.events import emit, has_outgoing, snapshot
 from workspaces.models import Membership
 from workspaces.permissions import WorkspaceScopedMixin
@@ -103,13 +104,16 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
         task = serializer.save(workspace=self.workspace, created_by=self.request.user)
         if has_outgoing(self.workspace.id):
             emit(None, task)
+        notify.task_changed(None, task, actor=self.request.user)
 
     def perform_update(self, serializer):
         tracked = has_outgoing(self.workspace.id)
         before = snapshot(serializer.instance) if tracked else None
+        before_light = notify.light(serializer.instance)
         task = serializer.save()
         if tracked:
             emit(before, task)
+        notify.task_changed(before_light, task, actor=self.request.user)
 
     def perform_destroy(self, instance):
         before = snapshot(instance) if has_outgoing(self.workspace.id) else None

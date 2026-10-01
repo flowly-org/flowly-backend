@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "workspaces",
     "tasks",
     "integrations",
+    "concierge",
 ]
 
 MIDDLEWARE = [
@@ -161,3 +162,18 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
 MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")
+
+# LLM: the platform OpenRouter key serves Pro users; workspaces can bring their own provider.
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openrouter/auto")
+OPENROUTER_BASE_URL = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+# Daily token budget per user on the platform key (BYO providers aren't capped).
+CONCIERGE_DAILY_TOKENS = int(os.environ.get("CONCIERGE_DAILY_TOKENS", "300000"))
+
+# Telegram concierge bot. "polling" works without a public HTTPS URL; "webhook" needs PUBLIC API URL.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_MODE = os.environ.get("TELEGRAM_MODE", "polling")
+TELEGRAM_WEBHOOK_SECRET = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+TELEGRAM_API_URL = os.environ.get("TELEGRAM_API_URL", "https://api.telegram.org")
+# Public URL of the API itself (webhooks), e.g. https://api.flowly.net. Defaults to PUBLIC_URL.
+API_PUBLIC_URL = os.environ.get("API_PUBLIC_URL", "").rstrip("/") or PUBLIC_URL

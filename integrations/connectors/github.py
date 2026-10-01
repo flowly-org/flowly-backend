@@ -204,6 +204,9 @@ class GitHub(Connector):
             external_url=gh_comment.get("html_url", ""),
         )
         emit_comment(comment, origin=integration)
+        from concierge import notify
+
+        notify.comment_added(comment)
         return self._finish(log, task, "success", "Added comment.")
 
     def apply_issue_event(self, integration, payload) -> Delivery:

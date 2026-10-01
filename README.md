@@ -123,3 +123,23 @@ GitHub issues sync both ways. `GET /api/config/` tells the client which sources 
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `S3_ADDRESSING_STYLE` | File uploads to any S3-compatible bucket (private; downloads use 5-minute signed URLs, so the endpoint must be reachable by browsers). `ATTACHMENT_MAX_MB` (default 25). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_API_KEY`, `GOOGLE_APP_ID` | Google Drive picker (OAuth client of type *Web*, authorised JS origin = your site; Picker API enabled; app id = project number). Scope `drive.file`; Flowly stores only links. |
 | `MICROSOFT_CLIENT_ID` | OneDrive / SharePoint picker (Entra app registration, SPA platform with your site's origin + `/` as redirect URI). |
+
+## Notifications & concierge
+
+Every user gets in-app notifications (`GET/POST /api/notifications/`): a task assigned to you by
+someone else, an **urgent** task (top priority of its workspace) landing on your today, and comments
+on your tasks. The web app polls them and refreshes open boards.
+
+The **concierge** is a Pro feature (`User.plan = "pro"`, set in `/admin`; staff always have it): a
+personal assistant on Telegram and in Settings that sends a morning brief, forwards the alerts above,
+and answers/acts on requests with tools over your tasks (list/create/update/complete/comment/remember).
+
+| Setting | Purpose |
+|---|---|
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` (default `openrouter/auto`; pick a tool-calling model) | Platform LLM for Pro users. `CONCIERGE_DAILY_TOKENS` caps usage per user per day. |
+| `TELEGRAM_BOT_TOKEN` | Bot created with @BotFather. Users link from Settings → Concierge (deep link `t.me/<bot>?start=<code>`). |
+| `TELEGRAM_MODE` | `polling` (default, done by the worker, no public URL needed) or `webhook`: set `API_PUBLIC_URL=https://api.flowly.net` and `TELEGRAM_WEBHOOK_SECRET`, then run `python manage.py telegram_webhook`. |
+
+Workspaces can add an **OpenRouter** or **OpenAI-compatible** integration (API key stored encrypted).
+A user may choose it as their concierge model; when a workspace's provider is marked *exclusive*,
+that workspace's tasks are never sent to any other model.

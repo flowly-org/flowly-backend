@@ -6,10 +6,12 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
+    has_pro = serializers.BooleanField(read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "github_login", "is_staff"]
-        read_only_fields = ["id", "email", "is_staff"]
+        fields = ["id", "email", "full_name", "github_login", "is_staff", "plan", "has_pro"]
+        read_only_fields = ["id", "email", "is_staff", "plan", "has_pro"]
 
     def validate_github_login(self, value):
         return value.strip().lstrip("@")

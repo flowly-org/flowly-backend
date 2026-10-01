@@ -30,6 +30,12 @@ class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=150, blank=True)
+    class Plan(models.TextChoices):
+        FREE = "free", "Free"
+        PRO = "pro", "Pro"
+
+    plan = models.CharField(max_length=10, choices=Plan.choices, default=Plan.FREE)
+    plan_expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry.")
     github_login = models.CharField(
         max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
     )
@@ -38,6 +44,14 @@ class User(AbstractUser):
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    @property
+    def has_pro(self):
+        from django.utils import timezone
+
+        if self.is_staff:
+            return True
+        return self.plan == self.Plan.PRO and (self.plan_expires_at is None or self.plan_expires_at > timezone.now())
 
     def __str__(self):
         return self.full_name or self.email

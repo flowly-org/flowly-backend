@@ -28,6 +28,8 @@ class Integration(models.Model):
         OUTGOING_WEBHOOK = "outgoing_webhook", "Outgoing webhook"
         INCOMING_WEBHOOK = "incoming_webhook", "Incoming webhook"
         EMAIL = "email", "Email in"
+        OPENROUTER = "openrouter", "OpenRouter"
+        OPENAI_COMPATIBLE = "openai_compatible", "OpenAI-compatible endpoint"
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="integrations")
     project = models.ForeignKey(
@@ -38,6 +40,8 @@ class Integration(models.Model):
     name = models.CharField(max_length=120)
     enabled = models.BooleanField(default=True)
     config = models.JSONField(default=dict, blank=True)
+    #: Encrypted secrets (e.g. API keys); never returned by the API.
+    credentials = models.JSONField(default=dict, blank=True)
     token = models.CharField(max_length=40, unique=True, default=new_token, help_text="Public id used in incoming URLs and email addresses.")
     secret = models.CharField(max_length=64, default=new_secret, help_text="Signs outgoing payloads / verifies incoming ones.")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")

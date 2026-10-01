@@ -56,6 +56,15 @@ class IntegrationViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     def test(self, request, workspace_pk=None, pk=None):
         integration = self.get_object()
         connector = REGISTRY[integration.kind]
+        if hasattr(connector, "test"):
+            log = Delivery(integration=integration, direction=Delivery.Direction.OUT, event="ping", finished_at=timezone.now())
+            try:
+                log.response_body = connector.test(integration)
+                log.status = Delivery.Status.SUCCESS
+            except DeliveryError as exc:
+                log.status, log.last_error, log.response_status, log.response_body = Delivery.Status.FAILED, str(exc), exc.status, exc.body
+            log.save()
+            return Response(DeliverySerializer(log).data)
         if not connector.outgoing:
             raise ValidationError({"detail": "This integration only receives data; send something to its URL or address to test it."})
         delivery = Delivery.objects.create(
