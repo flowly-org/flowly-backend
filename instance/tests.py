@@ -68,3 +68,49 @@ class AdminPanelTests(APITestCase):
         res = self.client.post("/api/admin/check/openrouter/").data
         self.assertFalse(res["ok"])
         self.assertIn("No OpenRouter API key", res["message"])
+
+
+class GitHubAppAdminTests(APITestCase):
+    def setUp(self):
+        conf.clear_cache()
+        self.admin = self.client.post("/api/auth/register/", {"email": "root@example.com", "password": "s3cure-Passw0rd"}).data
+        User.objects.filter(email="root@example.com").update(is_staff=True)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.admin['access']}")
+
+    def test_connect_verify_and_remove(self):
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+
+        from integrations.models import GitHubApp
+
+        pem = rsa.generate_private_key(public_exponent=65537, key_size=2048).private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
+        self.assertFalse(self.client.get("/api/admin/github-app/").data["configured"])
+        self.assertEqual(self.client.put("/api/admin/github-app/", {"app_id": "1"}, format="json").status_code, 400)
+
+        def fake(method, url, **kw):
+            if url.endswith("/app"):
+                return FakeResponse({"slug": "flowly-acme", "name": "Flowly ACME", "owner": {"login": "acme"},
+                                     "html_url": "https://github.com/apps/flowly-acme"})
+            return FakeResponse([{"id": 5, "account": {"login": "acme", "type": "Organization"}, "repository_selection": "selected"}])
+
+        body = {"app_id": "123", "slug": "x", "client_id": "Iv1.abc", "client_secret": "s", "webhook_secret": "w", "private_key": pem}
+        with mock.patch("integrations.http.requests.request", side_effect=fake):
+            res = self.client.put("/api/admin/github-app/", body, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual((res.data["app"]["slug"], res.data["app"]["owner"]), ("flowly-acme", "acme"))
+        self.assertEqual(res.data["installations"][0]["account"], "acme")
+        self.assertNotIn("private_key", res.data["app"])
+        self.assertTrue(res.data["webhook_url"].endswith("/api/integrations/github/webhook/"))
+
+        # Updating only the webhook secret keeps the rest.
+        with mock.patch("integrations.http.requests.request", side_effect=fake):
+            self.client.put("/api/admin/github-app/", {"webhook_secret": "new"}, format="json")
+        self.assertEqual(GitHubApp.objects.get().webhook_secret, "new")
+
+        with mock.patch("integrations.http.requests.request", return_value=FakeResponse({"message": "Bad credentials"})) as m:
+            m.return_value.status_code = 401
+            res = self.client.put("/api/admin/github-app/", {"private_key": pem}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.client.delete("/api/admin/github-app/").status_code, 204)
+        self.assertFalse(GitHubApp.objects.exists())

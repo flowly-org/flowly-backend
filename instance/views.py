@@ -4,6 +4,7 @@ import secrets
 import uuid
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count, OuterRef, Q, Sum
 from django.utils import timezone
@@ -11,6 +12,8 @@ from rest_framework import permissions, serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from integrations.http import send
 
 from . import conf
 
@@ -220,3 +223,89 @@ class OverviewView(StaffView):
                 "ai_today": {"requests": usage["r"] or 0, "tokens": (usage["t"] or 0) + (usage["c"] or 0)},
             }
         )
+
+
+class GitHubAppAdminView(StaffView):
+    """GET status · PUT {app_id, slug, client_id, client_secret?, webhook_secret?, private_key?, …} connects an
+    existing GitHub App (verified with GitHub first) · DELETE disconnects it."""
+
+    FIELDS = ("app_id", "slug", "name", "owner", "html_url", "client_id", "client_secret", "webhook_secret", "private_key")
+
+    def urls(self):
+        from mcpauth.views import api_base
+
+        public = conf.get("PUBLIC_URL")
+        return {
+            "webhook_url": f"{api_base()}/api/integrations/github/webhook/",
+            "callback_url": f"{public}/github/app-created",
+            "setup_url": f"{public}/github/installed",
+        }
+
+    def get(self, request):
+        from integrations import github
+        from integrations.models import Integration
+
+        app = github.get_app()
+        data = {"configured": app is not None, **self.urls(), "app": None, "installations": [], "error": None}
+        if app is None:
+            return Response(data)
+        data["app"] = {
+            "app_id": app.app_id, "slug": app.slug, "name": app.name, "owner": app.owner, "html_url": app.html_url,
+            "client_id": app.client_id, "has_client_secret": bool(app.client_secret),
+            "has_webhook_secret": bool(app.webhook_secret), "has_private_key": bool(app.private_key),
+            "created_at": app.created_at,
+        }
+        data["integrations"] = Integration.objects.filter(kind="github").count()
+        try:
+            for inst in github.api("GET", "/app/installations", app_auth=True) or []:
+                data["installations"].append({
+                    "id": inst["id"], "account": (inst.get("account") or {}).get("login"),
+                    "type": (inst.get("account") or {}).get("type"), "repositories": inst.get("repository_selection"),
+                    "url": inst.get("html_url"),
+                })
+        except Exception as exc:
+            data["error"] = f"GitHub didn't accept the app credentials: {exc}"
+        return Response(data)
+
+    def put(self, request):
+        from integrations import github
+        from integrations.models import GitHubApp
+
+        current = github.get_app()
+        values = {f: request.data.get(f) for f in self.FIELDS if request.data.get(f) not in (None, "")}
+        merged = {f: getattr(current, f) for f in self.FIELDS} if current else {}
+        merged.update(values)
+        missing = [f for f in ("app_id", "slug", "client_id", "webhook_secret", "private_key") if not merged.get(f)]
+        if missing:
+            raise ValidationError({"detail": f"Missing: {', '.join(missing)}."})
+        try:
+            merged["app_id"] = int(merged["app_id"])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"app_id": "The App ID is a number."}) from exc
+        merged["private_key"] = merged["private_key"].strip() + "\n"
+        candidate = GitHubApp(**{**{f: merged.get(f) or "" for f in self.FIELDS}, "app_id": merged["app_id"]})
+        if not candidate.html_url:
+            candidate.html_url = f"https://github.com/apps/{candidate.slug}"
+        # Verify before saving: sign an app JWT with the key and ask GitHub who we are.
+        try:
+            me = send("GET", f"{settings.GITHUB_API_URL}/app", check_url=False, headers={
+                "Authorization": f"Bearer {github.app_jwt(candidate)}", "Accept": "application/vnd.github+json",
+            }).json()
+        except Exception as exc:
+            raise ValidationError({"detail": f"GitHub rejected these credentials: {exc}"}) from exc
+        candidate.slug = me.get("slug") or candidate.slug
+        candidate.name = me.get("name") or candidate.name or candidate.slug
+        candidate.owner = (me.get("owner") or {}).get("login", candidate.owner or "")
+        candidate.html_url = me.get("html_url") or candidate.html_url
+        GitHubApp.objects.all().delete()
+        candidate.save()
+        github._tokens.clear()
+        return self.get(request)
+
+    def delete(self, request):
+        from integrations import github
+        from integrations.models import GitHubApp
+
+        GitHubApp.objects.all().delete()
+        github._tokens.clear()
+        return Response(status=status.HTTP_204_NO_CONTENT)
