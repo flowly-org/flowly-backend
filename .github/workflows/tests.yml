@@ -1,0 +1,31 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flowly
+          POSTGRES_PASSWORD: flowly
+          POSTGRES_DB: flowly
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U flowly" --health-interval 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://flowly:flowly@localhost:5432/flowly
+      DJANGO_SECRET_KEY: ci-secret-key-that-is-long-enough-for-hmac-sha256
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test
