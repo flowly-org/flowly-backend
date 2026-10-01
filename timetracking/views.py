@@ -116,8 +116,7 @@ class BillingView(WorkspaceScopedMixin, APIView):
             rate = rate_for(billing, project)
             projects.append({
                 "project": project.id, "name": project.name, "color": project.color, "archived": project.archived,
-                **(ProjectBillingSerializer(pb).data if pb else {"mode": "inherit", "hourly_rate": None, "client_name": "",
-                                                                  "client_details": "", "budget_hours": None}),
+                **ProjectBillingSerializer(pb or ProjectBilling(project=project)).data,
                 "effective_rate": str(rate) if rate is not None else None,
                 "unbilled_hours": round(seconds / 3600, 2),
                 "tracked_hours": round(total_seconds / 3600, 2),
@@ -139,6 +138,7 @@ class ProjectBillingView(WorkspaceScopedMixin, APIView):
         self.require_manager()
         project = get_object_or_404(self.workspace.projects, pk=project_pk)
         pb, _ = ProjectBilling.objects.get_or_create(project=project)
+        old_name, old_details = pb.client_name, pb.client_details
         serializer = ProjectBillingSerializer(pb, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         extra = {}
@@ -148,6 +148,12 @@ class ProjectBillingView(WorkspaceScopedMixin, APIView):
             # Start from the workspace rate; the admin adjusts it afterwards.
             extra["hourly_rate"] = WorkspaceBilling.for_workspace(self.workspace).default_rate
         serializer.save(**extra)
+        # Drafts that still show the old client follow the change (sent invoices never do).
+        drafts = Invoice.objects.filter(project=project, status=Invoice.Status.DRAFT)
+        if pb.client_name != old_name:
+            drafts.filter(client_name__in=[old_name, project.name]).update(client_name=pb.client_name or project.name)
+        if pb.client_details != old_details:
+            drafts.filter(client_details=old_details).update(client_details=pb.client_details)
         if pb.mode == ProjectBilling.Mode.OFF:
             # Opting a project out makes its unbilled time non-billable.
             TimeEntry.objects.filter(project=project, invoice__isnull=True).update(billable=False)
@@ -166,6 +172,9 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         return self.workspace.invoices.prefetch_related("lines").select_related("project")
 
     def create(self, request, workspace_pk=None):
+        if not request.user.has_pro:
+            return Response({"detail": "Creating invoices is part of Flowly Pro. Time tracking and reports stay free."},
+                            status=status.HTTP_402_PAYMENT_REQUIRED)
         start = parse_date(request.data.get("period_start"), "period_start")
         end = parse_date(request.data.get("period_end"), "period_end")
         if not start or not end or end < start:
@@ -188,7 +197,13 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         instance.delete()
 
     def perform_update(self, serializer):
+        from . import fatturapa
+
+        was_draft = serializer.instance.status == Invoice.Status.DRAFT
         invoice = serializer.save()
+        if was_draft and invoice.status != Invoice.Status.DRAFT:
+            invoice.einvoice = fatturapa.current(invoice)  # freeze the e-invoice data as sent
+            invoice.save(update_fields=["einvoice"])
         if invoice.status == Invoice.Status.VOID:
             invoice.entries.update(invoice=None)  # voided time can be invoiced again
 
@@ -208,6 +223,23 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         writer.writerow(["Subtotal", "", "", invoice.subtotal])
         writer.writerow([f"Tax {invoice.tax_rate}%", "", "", invoice.tax_amount])
         writer.writerow(["Total", "", "", invoice.total])
+        return res
+
+    @action(detail=True, methods=["get"])
+    def fatturapa(self, request, workspace_pk=None, pk=None):
+        """Italian e-invoice XML (FatturaPA FPR12). ?check=1 only lists what's missing."""
+        from . import fatturapa
+
+        invoice = self.get_object()
+        if not request.user.has_pro:
+            return Response({"detail": "E-invoices are part of Flowly Pro."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+        missing = fatturapa.problems(invoice)
+        if request.query_params.get("check"):
+            return Response({"ok": not missing, "missing": missing, "filename": fatturapa.filename(invoice)})
+        if missing:
+            return Response({"detail": "Missing data for the e-invoice.", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
+        res = HttpResponse(fatturapa.build(invoice), content_type="application/xml")
+        res["Content-Disposition"] = f'attachment; filename="{fatturapa.filename(invoice)}"'
         return res
 
     @action(detail=True, methods=["get"])

@@ -10,6 +10,7 @@ from tasks.access import member_visible_q
 from tasks.models import Task
 from workspaces.models import Workspace
 
+from . import fatturapa
 from .models import Invoice, InvoiceLine, ProjectBilling, TimeEntry, WorkspaceBilling, money, project_billing, rate_for, rounded_seconds
 
 
@@ -152,6 +153,7 @@ def create_invoice(workspace, user, *, project, period_start: date, period_end: 
         issuer_name=billing.issuer_name, issuer_details=billing.issuer_details,
         client_name=(pb.client_name if pb else "") or (project.name if project else ""),
         client_details=pb.client_details if pb else "", notes=billing.invoice_notes, created_by=user,
+        einvoice=fatturapa.snapshot(billing, pb),
     )
     for i, line in enumerate(lines.values()):
         # The amount is computed from the hours as printed, so every line adds up on paper.

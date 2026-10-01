@@ -11,3 +11,4 @@ whitenoise>=6.8
 requests>=2.32
 cryptography>=43
 django-storages[s3]>=1.14
+lxml>=5.3

@@ -26,6 +26,23 @@ class WorkspaceBilling(models.Model):
     issuer_name = models.CharField(max_length=200, blank=True)
     issuer_details = models.TextField(blank=True, help_text="Address, VAT number, IBAN…")
     invoice_notes = models.TextField(blank=True)
+    # Italian e-invoicing (FatturaPA): the issuer ("cedente/prestatore").
+    issuer_vat = models.CharField("Partita IVA", max_length=28, blank=True, help_text="Without the country prefix.")
+    issuer_vat_country = models.CharField(max_length=2, default="IT")
+    issuer_tax_code = models.CharField("Codice fiscale", max_length=16, blank=True)
+    issuer_regime = models.CharField(
+        max_length=4, default="RF01", help_text="Regime fiscale: RF01 ordinario, RF19 forfettario, …"
+    )
+    issuer_address = models.CharField(max_length=60, blank=True)
+    issuer_zip = models.CharField(max_length=5, blank=True)
+    issuer_city = models.CharField(max_length=60, blank=True)
+    issuer_province = models.CharField(max_length=2, blank=True)
+    issuer_country = models.CharField(max_length=2, default="IT")
+    issuer_iban = models.CharField(max_length=34, blank=True)
+    #: Natura IVA for lines without VAT, e.g. N2.2 (forfettario), N4 (esenti).
+    vat_nature = models.CharField(max_length=5, default="N2.2")
+    #: Add the €2 virtual stamp duty on VAT-free invoices over €77.47 (bollo virtuale).
+    stamp_duty = models.BooleanField(default=False)
 
     @classmethod
     def for_workspace(cls, workspace):
@@ -43,6 +60,18 @@ class ProjectBilling(models.Model):
     hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     client_name = models.CharField(max_length=200, blank=True)
     client_details = models.TextField(blank=True)
+    # Italian e-invoicing (FatturaPA): the client ("cessionario/committente").
+    client_vat = models.CharField("Partita IVA", max_length=28, blank=True)
+    client_vat_country = models.CharField(max_length=2, default="IT")
+    client_tax_code = models.CharField("Codice fiscale", max_length=16, blank=True)
+    client_address = models.CharField(max_length=60, blank=True)
+    client_zip = models.CharField(max_length=5, blank=True)
+    client_city = models.CharField(max_length=60, blank=True)
+    client_province = models.CharField(max_length=2, blank=True)
+    client_country = models.CharField(max_length=2, default="IT")
+    #: Codice destinatario (7 characters; 0000000 when the invoice goes to a PEC address or to a private person).
+    client_sdi_code = models.CharField(max_length=7, blank=True)
+    client_pec = models.EmailField(blank=True)
     budget_hours = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
 
@@ -103,6 +132,8 @@ class Invoice(models.Model):
     client_name = models.CharField(max_length=200, blank=True)
     client_details = models.TextField(blank=True)
     notes = models.TextField(blank=True)
+    #: Issuer and client data for FatturaPA, copied when the invoice is created (see fatturapa.snapshot).
+    einvoice = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
 
