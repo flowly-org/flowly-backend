@@ -11,7 +11,7 @@ def env_list(name, default=""):
     return [v.strip() for v in os.environ.get(name, default).split(",") if v.strip()]
 
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-insecure-secret-key-change-me-in-production-please")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or "dev-insecure-secret-key-change-me-in-production-please"
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 
@@ -105,6 +105,9 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "Multi-project, multi-user daily task planning with swimlanes.",
     "VERSION": "1.0.0",
 }
+
+# Needed for the Django admin when it's served through the frontend's /admin proxy.
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS", "http://localhost:4200,http://localhost:8080"
