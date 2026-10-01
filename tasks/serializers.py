@@ -1,9 +1,10 @@
 from django.contrib.auth import get_user_model
-from django.db.models import Max
+from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Project, Tag, TagGroup, Task
+from .services import default_status
 
 User = get_user_model()
 
@@ -46,11 +47,17 @@ class TagSerializer(WorkspaceScopedSerializer):
 
     class Meta:
         model = Tag
-        fields = ["id", "name", "color", "group", "position"]
+        fields = ["id", "name", "color", "group", "position", "is_done"]
         read_only_fields = ["id"]
 
     def validate(self, attrs):
         group = attrs.get("group", self.instance.group if self.instance else None)
+        if self.instance and "group" in attrs and attrs["group"] != self.instance.group:
+            old = self.instance.group
+            if (old and old.is_system) or (group and group.is_system):
+                raise serializers.ValidationError({"group": "Status and priority tags can't change group."})
+        if attrs.get("is_done") and not (group and group.kind == TagGroup.Kind.STATUS):
+            attrs["is_done"] = False
         name = attrs.get("name", self.instance.name if self.instance else None)
         qs = Tag.objects.filter(workspace=self.context["workspace"], group=group, name__iexact=name)
         if self.instance:
@@ -65,8 +72,8 @@ class TagGroupSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = TagGroup
-        fields = ["id", "name", "position", "tags"]
-        read_only_fields = ["id"]
+        fields = ["id", "name", "kind", "position", "tags"]
+        read_only_fields = ["id", "kind"]
 
     def validate_name(self, value):
         qs = TagGroup.objects.filter(workspace=self.context["workspace"], name__iexact=value)
@@ -81,8 +88,22 @@ class TaskSerializer(WorkspaceScopedSerializer):
     scoped_fields = {
         "project": lambda ws: Project.objects.filter(workspace=ws),
         "assignee": lambda ws: User.objects.filter(memberships__workspace=ws),
-        "tags": lambda ws: Tag.objects.filter(workspace=ws),
+        "tags": lambda ws: Tag.objects.filter(workspace=ws).filter(
+            Q(group__isnull=True) | Q(group__kind=TagGroup.Kind.CUSTOM)
+        ),
+        "status": lambda ws: Tag.objects.filter(workspace=ws, group__kind=TagGroup.Kind.STATUS),
+        "priority": lambda ws: Tag.objects.filter(workspace=ws, group__kind=TagGroup.Kind.PRIORITY),
     }
+
+    status = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(), required=False, help_text="Id of a tag in the workspace's Status group."
+    )
+    priority = serializers.PrimaryKeyRelatedField(
+        queryset=Tag.objects.all(),
+        allow_null=True,
+        required=False,
+        help_text="Id of a tag in the workspace's Priority group, or null.",
+    )
 
     project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
     assignee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), allow_null=True, required=False)
@@ -93,6 +114,7 @@ class TaskSerializer(WorkspaceScopedSerializer):
         model = Task
         fields = [
             "id",
+            "workspace",
             "title",
             "description",
             "status",
@@ -108,7 +130,7 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "updated_at",
             "completed_at",
         ]
-        read_only_fields = ["id", "created_by", "created_at", "updated_at", "completed_at"]
+        read_only_fields = ["id", "workspace", "created_by", "created_at", "updated_at", "completed_at"]
 
     def validate_tags(self, tags):
         seen = {}
@@ -127,13 +149,18 @@ class TaskSerializer(WorkspaceScopedSerializer):
         status = validated_data.get("status")
         if status is None:
             return
-        if status == Task.Status.DONE and (instance is None or instance.status != Task.Status.DONE):
+        if status.is_done and (instance is None or not instance.status.is_done):
             validated_data["completed_at"] = timezone.now()
-        elif status != Task.Status.DONE:
+        elif not status.is_done:
             validated_data["completed_at"] = None
 
     def create(self, validated_data):
         workspace = self.context["workspace"]
+        if "status" not in validated_data:
+            status = default_status(workspace)
+            if status is None:
+                raise serializers.ValidationError({"status": "This workspace has no statuses."})
+            validated_data["status"] = status
         if "position" not in validated_data:
             top = Task.objects.filter(workspace=workspace).aggregate(m=Max("position"))["m"] or 0
             validated_data["position"] = top + 1024

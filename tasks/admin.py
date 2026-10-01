@@ -11,7 +11,7 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(TagGroup)
 class TagGroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "workspace")
+    list_display = ("name", "kind", "workspace")
 
 
 @admin.register(Tag)

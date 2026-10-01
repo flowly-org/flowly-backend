@@ -7,6 +7,9 @@ from .models import Invitation, Membership, Workspace
 def create_workspace(name, owner):
     workspace = Workspace.objects.create(name=name, created_by=owner)
     Membership.objects.create(workspace=workspace, user=owner, role=Membership.Role.OWNER)
+    from tasks.services import create_system_groups
+
+    create_system_groups(workspace)
     return workspace
 
 

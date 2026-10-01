@@ -27,20 +27,38 @@ class Project(models.Model):
 
 
 class TagGroup(models.Model):
-    """A user-defined dimension (e.g. "Context", "Energy") whose tags can become swimlanes.
+    """A dimension (e.g. "Context", "Energy") whose tags can become swimlanes.
 
-    A task carries at most one tag from each group.
+    A task carries at most one tag from each group. Every workspace also has two
+    built-in groups: STATUS (its tags are the board columns, stored on Task.status)
+    and PRIORITY (stored on Task.priority). They're edited like any other group but
+    can't be deleted.
     """
+
+    class Kind(models.TextChoices):
+        CUSTOM = "custom", "Custom"
+        STATUS = "status", "Status"
+        PRIORITY = "priority", "Priority"
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="tag_groups")
     name = models.CharField(max_length=60)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.CUSTOM)
     position = models.IntegerField(default=0)
 
     class Meta:
         ordering = ["position", "name", "id"]
         constraints = [
-            models.UniqueConstraint(fields=["workspace", "name"], name="unique_tag_group_name")
+            models.UniqueConstraint(fields=["workspace", "name"], name="unique_tag_group_name"),
+            models.UniqueConstraint(
+                fields=["workspace", "kind"],
+                condition=~models.Q(kind="custom"),
+                name="unique_system_tag_group",
+            ),
         ]
+
+    @property
+    def is_system(self):
+        return self.kind != self.Kind.CUSTOM
 
     def __str__(self):
         return self.name
@@ -54,6 +72,9 @@ class Tag(models.Model):
     name = models.CharField(max_length=60)
     color = models.CharField(max_length=7, default="#64748b", validators=[hex_color])
     position = models.IntegerField(default=0)
+    is_done = models.BooleanField(
+        default=False, help_text="Status tags only: tasks in this status count as finished."
+    )
 
     class Meta:
         ordering = ["position", "name", "id"]
@@ -66,25 +87,23 @@ class Tag(models.Model):
 
 
 class Task(models.Model):
-    class Status(models.TextChoices):
-        TODO = "todo", "To do"
-        IN_PROGRESS = "in_progress", "In progress"
-        DONE = "done", "Done"
-
-    class Priority(models.IntegerChoices):
-        NONE = 0, "None"
-        LOW = 1, "Low"
-        MEDIUM = 2, "Medium"
-        HIGH = 3, "High"
-
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="tasks")
     project = models.ForeignKey(
         Project, null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks"
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
-    status = models.CharField(max_length=12, choices=Status.choices, default=Status.TODO)
-    priority = models.PositiveSmallIntegerField(choices=Priority.choices, default=Priority.NONE)
+    status = models.ForeignKey(
+        Tag, on_delete=models.PROTECT, related_name="status_tasks", help_text="A tag of the STATUS group."
+    )
+    priority = models.ForeignKey(
+        Tag,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="priority_tasks",
+        help_text="A tag of the PRIORITY group; empty = no priority.",
+    )
     planned_date = models.DateField(
         null=True, blank=True, help_text="The day this task is planned for; empty = backlog."
     )

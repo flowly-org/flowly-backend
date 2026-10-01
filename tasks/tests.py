@@ -67,7 +67,7 @@ class AuthAndWorkspaceTests(ApiTestCase):
         self.assertEqual(res.status_code, 403)
 
 
-class TaskTests(ApiTestCase):
+class TeamWorkspaceTestCase(ApiTestCase):
     def setUp(self):
         self.alice = self.register("alice@example.com")
         self.bob = self.register("bob@example.com")
@@ -76,6 +76,12 @@ class TaskTests(ApiTestCase):
         self.client.post(f"/api/workspaces/{self.ws['id']}/members/", {"email": "bob@example.com"})
         self.base = f"/api/workspaces/{self.ws['id']}"
 
+    def system_tags(self, kind):
+        groups = self.client.get(f"{self.base}/tag-groups/").data
+        return {t["name"]: t for g in groups if g["kind"] == kind for t in g["tags"]}
+
+
+class TaskTests(TeamWorkspaceTestCase):
     def test_task_crud_with_project_tags_and_assignee(self):
         project = self.client.post(f"{self.base}/projects/", {"name": "Website", "color": "#ff0000"}).data
         group = self.client.post(f"{self.base}/tag-groups/", {"name": "Context"}).data
@@ -95,17 +101,19 @@ class TaskTests(ApiTestCase):
         )
         self.assertEqual(res.status_code, 201, res.data)
         task = res.data
-        self.assertEqual(task["status"], "todo")
+        statuses = self.system_tags("status")
+        self.assertEqual(task["status"], statuses["To do"]["id"])
+        self.assertIsNone(task["priority"])
 
-        res = self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": "done"}, format="json")
+        res = self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": statuses["Done"]["id"]}, format="json")
         self.assertIsNotNone(res.data["completed_at"])
-        res = self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": "todo"}, format="json")
+        res = self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": statuses["To do"]["id"]}, format="json")
         self.assertIsNone(res.data["completed_at"])
 
         office = self.client.post(f"{self.base}/tags/", {"name": "@office", "group": group["id"]}).data
         self.assertEqual(office["position"], home["position"] + 1)
-        groups = self.client.get(f"{self.base}/tag-groups/").data
-        self.assertEqual([t["name"] for t in groups[0]["tags"]], ["@home", "@office"])
+        groups = {g["name"]: g for g in self.client.get(f"{self.base}/tag-groups/").data}
+        self.assertEqual([t["name"] for t in groups["Context"]["tags"]], ["@home", "@office"])
 
     def test_one_tag_per_group(self):
         group = self.client.post(f"{self.base}/tag-groups/", {"name": "Energy"}).data
@@ -133,7 +141,8 @@ class TaskTests(ApiTestCase):
         mk(title="today mine", planned_date="2026-10-01", assignee=self.alice["user"]["id"])
         mk(title="today bob", planned_date="2026-10-01", assignee=self.bob["user"]["id"])
         mk(title="late open", planned_date="2026-09-28", assignee=self.alice["user"]["id"])
-        mk(title="late done", planned_date="2026-09-28", status="done", assignee=self.alice["user"]["id"])
+        done = self.system_tags("status")["Done"]["id"]
+        mk(title="late done", planned_date="2026-09-28", status=done, assignee=self.alice["user"]["id"])
         mk(title="backlog")
 
         titles = lambda q: sorted(t["title"] for t in self.client.get(f"{self.base}/tasks/?{q}").data)
@@ -150,3 +159,87 @@ class TaskTests(ApiTestCase):
         res = self.client.delete(f"{self.base}/members/{membership.id}/")
         self.assertEqual(res.status_code, 204)
         self.assertIsNone(self.client.get(f"{self.base}/tasks/{task['id']}/").data["assignee"])
+
+
+class StatusAndPriorityTagTests(TeamWorkspaceTestCase):
+    def test_workspace_has_editable_system_groups(self):
+        groups = self.client.get(f"{self.base}/tag-groups/").data
+        kinds = {g["kind"]: g for g in groups}
+        self.assertEqual([t["name"] for t in kinds["status"]["tags"]], ["To do", "In progress", "Done"])
+        self.assertEqual([t["is_done"] for t in kinds["status"]["tags"]], [False, False, True])
+        self.assertEqual([t["name"] for t in kinds["priority"]["tags"]], ["Low", "Medium", "High"])
+
+        # Built-in groups can be renamed but not deleted.
+        res = self.client.patch(f"{self.base}/tag-groups/{kinds['status']['id']}/", {"name": "Stage"}, format="json")
+        self.assertEqual(res.data["name"], "Stage")
+        self.assertEqual(self.client.delete(f"{self.base}/tag-groups/{kinds['status']['id']}/").status_code, 400)
+
+        # Custom statuses and priorities.
+        review = self.client.post(f"{self.base}/tags/", {"name": "Review", "group": kinds["status"]["id"]}).data
+        wont = self.client.post(f"{self.base}/tags/", {"name": "Won't do", "group": kinds["status"]["id"], "is_done": True}).data
+        urgent = self.client.post(f"{self.base}/tags/", {"name": "Urgent", "group": kinds["priority"]["id"]}).data
+        task = self.client.post(f"{self.base}/tasks/", {"title": "t", "status": review["id"], "priority": urgent["id"]}, format="json").data
+        self.assertEqual((task["status"], task["priority"]), (review["id"], urgent["id"]))
+        res = self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": wont["id"]}, format="json")
+        self.assertIsNotNone(res.data["completed_at"])
+
+        # Deleting a status moves its tasks to another status with the same done-ness.
+        self.client.delete(f"{self.base}/tags/{wont['id']}/")
+        task = self.client.get(f"{self.base}/tasks/{task['id']}/").data
+        self.assertEqual(task["status"], self.system_tags("status")["Done"]["id"])
+        # Deleting a priority clears it.
+        self.client.delete(f"{self.base}/tags/{urgent['id']}/")
+        self.assertIsNone(self.client.get(f"{self.base}/tasks/{task['id']}/").data["priority"])
+
+    def test_status_and_priority_must_come_from_their_groups(self):
+        priorities = self.system_tags("priority")
+        statuses = self.system_tags("status")
+        free = self.client.post(f"{self.base}/tags/", {"name": "x"}).data
+        bad = [
+            {"title": "t", "status": priorities["High"]["id"]},
+            {"title": "t", "priority": statuses["Done"]["id"]},
+            {"title": "t", "status": free["id"]},
+            {"title": "t", "tags": [statuses["Done"]["id"]]},
+        ]
+        for payload in bad:
+            self.assertEqual(self.client.post(f"{self.base}/tasks/", payload, format="json").status_code, 400, payload)
+
+    def test_last_status_cannot_be_deleted(self):
+        statuses = list(self.system_tags("status").values())
+        for tag in statuses[:-1]:
+            self.assertEqual(self.client.delete(f"{self.base}/tags/{tag['id']}/").status_code, 204)
+        self.assertEqual(self.client.delete(f"{self.base}/tags/{statuses[-1]['id']}/").status_code, 400)
+
+
+class CrossWorkspaceTests(ApiTestCase):
+    def test_my_tasks_and_context_span_only_my_workspaces(self):
+        alice = self.register("alice@example.com")
+        bob = self.register("bob@example.com")
+        self.login_as(alice)
+        team = self.client.post("/api/workspaces/", {"name": "Team"}).data
+        personal = next(w for w in self.client.get("/api/workspaces/").data if w["name"] == "Personal")
+        uid = alice["user"]["id"]
+        for ws, title in ((team, "team task"), (personal, "personal task")):
+            self.client.post(
+                f"/api/workspaces/{ws['id']}/tasks/",
+                {"title": title, "planned_date": "2026-10-01", "assignee": uid},
+                format="json",
+            )
+        self.client.post(f"/api/workspaces/{team['id']}/projects/", {"name": "Site"})
+
+        self.login_as(bob)  # bob's own task must not leak into alice's view
+        bob_ws = self.client.get("/api/workspaces/").data[0]
+        self.client.post(f"/api/workspaces/{bob_ws['id']}/tasks/", {"title": "bob task", "planned_date": "2026-10-01"}, format="json")
+
+        self.login_as(alice)
+        res = self.client.get("/api/my/tasks/?day=2026-10-01&assignee=me")
+        self.assertEqual(sorted(t["title"] for t in res.data), ["personal task", "team task"])
+        self.assertEqual({t["workspace"] for t in res.data}, {team["id"], personal["id"]})
+        res = self.client.get(f"/api/my/tasks/?day=2026-10-01&workspace={team['id']}")
+        self.assertEqual([t["title"] for t in res.data], ["team task"])
+
+        ctx = self.client.get("/api/my/context/").data
+        self.assertEqual([c["name"] for c in ctx], ["Personal", "Team"])
+        self.assertEqual([p["name"] for p in ctx[1]["projects"]], ["Site"])
+        self.assertEqual({g["kind"] for g in ctx[1]["tag_groups"]}, {"status", "priority"})
+        self.assertEqual(ctx[1]["members"][0]["user"]["email"], "alice@example.com")

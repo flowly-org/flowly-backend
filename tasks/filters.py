@@ -17,8 +17,10 @@ class TaskFilter(django_filters.FilterSet):
     assignee = django_filters.CharFilter(method="filter_assignee", help_text='User id, "me" or "none".')
     project = django_filters.CharFilter(method="filter_project", help_text='Project id or "none".')
     tag = django_filters.NumberFilter(field_name="tags")
-    status = django_filters.MultipleChoiceFilter(choices=Task.Status.choices)
+    status = django_filters.BaseInFilter(field_name="status", lookup_expr="in", help_text="Status tag ids, comma separated.")
+    done = django_filters.BooleanFilter(field_name="status__is_done")
     q = django_filters.CharFilter(method="filter_search")
+    workspace = django_filters.NumberFilter(field_name="workspace")
 
     class Meta:
         model = Task
@@ -30,7 +32,7 @@ class TaskFilter(django_filters.FilterSet):
     def filter_day(self, queryset, name, value):
         condition = Q(planned_date=value)
         if self.form.cleaned_data.get("include_overdue"):
-            condition |= Q(planned_date__lt=value) & ~Q(status=Task.Status.DONE)
+            condition |= Q(planned_date__lt=value) & Q(status__is_done=False)
         return queryset.filter(condition)
 
     def filter_assignee(self, queryset, name, value):

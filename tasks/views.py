@@ -1,7 +1,13 @@
 from django.db.models import Count, Max, Prefetch, Q
-from rest_framework import viewsets
+from drf_spectacular.utils import extend_schema, inline_serializer
+from django.db import transaction
+from rest_framework import generics, serializers, viewsets
+from rest_framework.exceptions import ValidationError
+from rest_framework.response import Response
 
+from workspaces.models import Membership
 from workspaces.permissions import WorkspaceScopedMixin
+from workspaces.serializers import MembershipSerializer
 
 from .filters import TaskFilter
 from .models import Project, Tag, TagGroup, Task
@@ -22,7 +28,7 @@ class ProjectViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return self.workspace.projects.annotate(
-            open_task_count=Count("tasks", filter=~Q(tasks__status=Task.Status.DONE))
+            open_task_count=Count("tasks", filter=Q(tasks__status__is_done=False))
         )
 
     def perform_create(self, serializer):
@@ -40,6 +46,11 @@ class TagGroupViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         save_appended(serializer, self.workspace.tag_groups.all(), workspace=self.workspace)
 
+    def perform_destroy(self, instance):
+        if instance.is_system:
+            raise ValidationError({"detail": f'The built-in "{instance.name}" group can\'t be deleted.'})
+        instance.delete()
+
 
 class TagViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     serializer_class = TagSerializer
@@ -52,13 +63,91 @@ class TagViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
         siblings = self.workspace.tags.filter(group=serializer.validated_data.get("group"))
         save_appended(serializer, siblings, workspace=self.workspace)
 
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        if instance.group and instance.group.kind == TagGroup.Kind.STATUS:
+            others = instance.group.tags.exclude(pk=instance.pk)
+            if not others.exists():
+                raise ValidationError({"detail": "A workspace needs at least one status."})
+            # Tasks in the deleted status move to the closest equivalent.
+            target = others.filter(is_done=instance.is_done).first() or others.first()
+            instance.status_tasks.update(status=target)
+        instance.delete()
+
 
 class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     filterset_class = TaskFilter
 
     def get_queryset(self):
-        return self.workspace.tasks.prefetch_related("tags").order_by("position", "id")
+        return self.workspace.tasks.prefetch_related("tags").select_related("status").order_by("position", "id")
 
     def perform_create(self, serializer):
         serializer.save(workspace=self.workspace, created_by=self.request.user)
+
+
+class MyTaskListView(generics.ListAPIView):
+    """Tasks from every workspace the user belongs to (same filters as the workspace task list).
+
+    Writes still go through /workspaces/<workspace>/tasks/<id>/.
+    """
+
+    serializer_class = TaskSerializer
+    filterset_class = TaskFilter
+
+    def get_queryset(self):
+        return (
+            Task.objects.filter(workspace__memberships__user=self.request.user)
+            .prefetch_related("tags")
+            .order_by("position", "id")
+        )
+
+
+class MyContextView(generics.GenericAPIView):
+    """Projects, tag groups, tags and members of all the user's workspaces, in one call."""
+
+    @extend_schema(
+        responses=inline_serializer(
+            "WorkspaceContext",
+            {
+                "id": serializers.IntegerField(),
+                "name": serializers.CharField(),
+                "my_role": serializers.CharField(),
+                "projects": ProjectSerializer(many=True),
+                "tag_groups": TagGroupSerializer(many=True),
+                "tags": TagSerializer(many=True),
+                "members": MembershipSerializer(many=True),
+            },
+            many=True,
+        )
+    )
+    def get(self, request):
+        memberships = (
+            Membership.objects.filter(user=request.user)
+            .select_related("workspace")
+            .order_by("workspace__name", "workspace_id")
+        )
+        result = []
+        for membership in memberships:
+            ws = membership.workspace
+            context = {"workspace": ws, "request": request}
+            projects = ws.projects.annotate(
+                open_task_count=Count("tasks", filter=Q(tasks__status__is_done=False))
+            )
+            groups = ws.tag_groups.prefetch_related(
+                Prefetch("tags", queryset=Tag.objects.order_by("position", "name", "id"))
+            )
+            result.append(
+                {
+                    "id": ws.id,
+                    "name": ws.name,
+                    "my_role": membership.role,
+                    "projects": ProjectSerializer(projects, many=True, context=context).data,
+                    "tag_groups": TagGroupSerializer(groups, many=True, context=context).data,
+                    "tags": TagSerializer(ws.tags.all(), many=True, context=context).data,
+                    "members": MembershipSerializer(
+                        ws.memberships.select_related("user"), many=True
+                    ).data,
+                }
+            )
+        return Response(result)
