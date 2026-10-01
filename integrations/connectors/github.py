@@ -1,5 +1,6 @@
 import re
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from .. import github
@@ -10,6 +11,7 @@ from .base import Connector, clean_schedule
 
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 MARKER_RE = re.compile(r"<!--\s*flowly-task:(\d+)\s*-->")
+COMMENT_MARKER_RE = re.compile(r"<!--\s*flowly-comment:(\d+)\s*-->")
 STATUS_LABEL_PREFIX = "flowly: "
 
 
@@ -40,6 +42,7 @@ class GitHub(Connector):
             "sync_labels": bool(config.get("sync_labels", True)),
             "status_labels": bool(config.get("status_labels", False)),
             "create_issues": bool(config.get("create_issues", False)),
+            "sync_comments": bool(config.get("sync_comments", True)),
             "done_status": config.get("done_status") or None,
             "open_status": config.get("open_status") or None,
         }
@@ -57,6 +60,8 @@ class GitHub(Connector):
             return linked
         if event == "task.updated":
             return linked and ("title" in changes or "description" in changes)
+        if event == "comment.created":
+            return linked and integration.config.get("sync_comments", True)
         return False
 
     # --- outgoing -----------------------------------------------------------
@@ -88,6 +93,16 @@ class GitHub(Connector):
             raise DeliveryError("Task is no longer linked to an issue.", retry=False)
         number = issue_number(link)
         path = f"/repos/{repo}/issues/{number}"
+
+        if delivery.event == "comment.created":
+            from tasks.models import Comment
+
+            comment = delivery.payload["comment"]
+            who = comment["author"]["name"] or comment["author"]["email"] or "Someone"
+            body = f"{comment['body']}\n\n— {who} via Flowly\n<!-- flowly-comment:{comment['id']} -->"
+            posted = github.installation_api(inst, "POST", f"{path}/comments", {"body": body})
+            Comment.objects.filter(pk=comment["id"]).update(external_id=str(posted["id"]), external_url=posted.get("html_url", ""))
+            return {"status": 201, "body": posted.get("html_url", "")}
 
         if delivery.event == "task.updated":
             changes = delivery.payload["changes"]
@@ -137,14 +152,59 @@ class GitHub(Connector):
                 integration.config = {**integration.config, "installation_id": None}
                 integration.save(update_fields=["config"])
             return []
-        if event != "issues":
+        if event not in ("issues", "issue_comment"):
             return []
         inst = (payload.get("installation") or {}).get("id")
         repo = payload["repository"]["full_name"]
         integrations = Integration.objects.filter(
             kind="github", enabled=True, config__installation_id=inst, config__repo__iexact=repo
         ).select_related("workspace", "project")
+        if event == "issue_comment":
+            return [d for d in (GitHub().apply_comment_event(i, payload) for i in integrations) if d]
         return [GitHub().apply_issue_event(i, payload) for i in integrations]
+
+    def apply_comment_event(self, integration, payload):
+        from integrations.events import emit_comment
+        from tasks.models import Comment
+
+        if not integration.config.get("sync_comments", True):
+            return None
+        action = payload["action"]
+        issue, gh_comment = payload["issue"], payload["comment"]
+        ext_id = external_id(payload["repository"]["full_name"], issue["number"])
+        link = ExternalLink.objects.filter(integration=integration, external_id=ext_id).select_related("task").first()
+        log = Delivery(
+            integration=integration, direction=Delivery.Direction.IN, event=f"issue_comment.{action}",
+            payload={"number": issue["number"], "comment": gh_comment["id"], "user": gh_comment["user"]["login"]},
+        )
+        if link is None:
+            return self._finish(log, None, "ignored", "Issue isn't linked to a task.")
+        task = link.task
+        body = gh_comment.get("body") or ""
+        if COMMENT_MARKER_RE.search(body):
+            return self._finish(log, task, "ignored", "Comment posted by Flowly.")
+        existing = Comment.objects.filter(task=task, source=Comment.Source.GITHUB, external_id=str(gh_comment["id"])).first()
+        if action == "deleted":
+            if existing:
+                existing.delete()
+            return self._finish(log, task, "success", "Removed comment.")
+        if existing:
+            existing.body = body
+            existing.edited_at = timezone.now()
+            existing.save(update_fields=["body", "edited_at"])
+            return self._finish(log, task, "success", "Updated comment.")
+        login = gh_comment["user"]["login"]
+        comment = Comment.objects.create(
+            task=task,
+            author=find_member(integration, github_login=login),
+            body=body,
+            source=Comment.Source.GITHUB,
+            external_author=login,
+            external_id=str(gh_comment["id"]),
+            external_url=gh_comment.get("html_url", ""),
+        )
+        emit_comment(comment, origin=integration)
+        return self._finish(log, task, "success", "Added comment.")
 
     def apply_issue_event(self, integration, payload) -> Delivery:
         action = payload["action"]

@@ -79,7 +79,7 @@ def manifest(base_url: str, name: str) -> dict:
         "setup_on_update": True,
         "public": True,
         "default_permissions": {"issues": "write", "metadata": "read"},
-        "default_events": ["issues"],
+        "default_events": ["issues", "issue_comment"],
     }
 
 

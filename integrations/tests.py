@@ -265,6 +265,34 @@ class GitHubTests(IntegrationTestCase):
 
         self.assertEqual(Task.objects.count(), 1)
 
+    def test_comments_sync_both_ways(self):
+        self.webhook("issues", self.issue_payload("opened"))
+        task = ExternalLink.objects.get().task
+        base = f"{self.base}/tasks/{task.id}/comments/"
+        # GitHub → Flowly, matched to the member by GitHub login, not echoed back.
+        gh_comment = {"id": 501, "body": "Repro attached", "user": {"login": "alice-gh"}, "html_url": "https://github.com/acme/site/issues/5#c501"}
+        self.webhook("issue_comment", {**self.issue_payload("created"), "comment": gh_comment})
+        comments = self.client.get(base).data
+        self.assertEqual((comments[0]["source"], comments[0]["author"]["email"]), ("github", "alice@example.com"))
+        self.assertFalse(Delivery.objects.filter(direction="out").exists())
+        self.webhook("issue_comment", {**self.issue_payload("edited"), "comment": {**gh_comment, "body": "Repro v2"}})
+        self.assertEqual(self.client.get(base).data[0]["body"], "Repro v2")
+
+        # Flowly → GitHub
+        mine = self.client.post(base, {"body": "Fixed in main"}, format="json").data
+        http = FakeHttp([
+            ("POST", "/access_tokens", FakeResponse(201, {"token": "t"})),
+            ("POST", "/issues/5/comments", FakeResponse(201, {"id": 777, "html_url": "https://github.com/acme/site/issues/5#c777"})),
+        ])
+        with mock.patch("integrations.http.requests.request", http):
+            process_due()
+        posted = next(c for c in http.calls if c["url"].endswith("/issues/5/comments"))
+        self.assertIn("Fixed in main", posted["json"]["body"])
+        self.assertIn(f"flowly-comment:{mine['id']}", posted["json"]["body"])
+        # GitHub's webhook for our own comment is ignored.
+        self.webhook("issue_comment", {**self.issue_payload("created"), "comment": {"id": 777, "body": posted["json"]["body"], "user": {"login": "flowly[bot]"}}})
+        self.assertEqual(len(self.client.get(base).data), 2)
+
     def test_install_flow_stores_installation(self):
         Integration.objects.filter(pk=self.gh["id"]).update(config={})
         res = self.client.post(f"{self.base}/integrations/{self.gh['id']}/github/install/")

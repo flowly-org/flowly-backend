@@ -7,7 +7,10 @@ from tasks.models import Task
 
 from .models import Delivery, Integration
 
-TASK_EVENTS = ["task.created", "task.updated", "task.status_changed", "task.completed", "task.assigned", "task.deleted"]
+TASK_EVENTS = [
+    "task.created", "task.updated", "task.status_changed", "task.completed", "task.assigned", "task.deleted",
+    "comment.created",
+]
 TRACKED_FIELDS = [
     "title", "description", "status_id", "priority_id", "project_id", "assignee_id",
     "planned_date", "due_date", "tags",
@@ -147,4 +150,58 @@ def emit(before: dict | None, task: Task | None, *, origin: Integration | None =
                     next_attempt_at=now,
                 )
             )
+    return created
+
+
+def comment_payload(comment) -> dict:
+    author = comment.author
+    return {
+        "id": comment.id,
+        "body": comment.body,
+        "source": comment.source,
+        "author": (
+            {"id": author.id, "email": author.email, "name": author.full_name}
+            if author
+            else {"id": None, "email": None, "name": comment.external_author}
+        ),
+        "created_at": comment.created_at.isoformat(),
+    }
+
+
+def emit_comment(comment, *, origin: Integration | None = None):
+    """Queue comment.created deliveries (e.g. post it on the linked GitHub issue)."""
+    from .connectors import REGISTRY
+
+    task = comment.task
+    if not has_outgoing(task.workspace_id):
+        return []
+    after = snapshot(task)
+    integrations = Integration.objects.filter(
+        workspace_id=task.workspace_id, enabled=True, kind__in=[k for k, c in REGISTRY.items() if c.outgoing]
+    ).select_related("workspace")
+    if origin is not None:
+        integrations = integrations.exclude(pk=origin.pk)
+    now = timezone.now()
+    created = []
+    for integration in integrations:
+        if integration.project_id is not None and integration.project_id != task.project_id:
+            continue
+        if not REGISTRY[integration.kind].wants(integration, "comment.created", after, after, {}):
+            continue
+        created.append(
+            Delivery.objects.create(
+                integration=integration,
+                task=task,
+                direction=Delivery.Direction.OUT,
+                event="comment.created",
+                payload={
+                    "event": "comment.created",
+                    "occurred_at": now.isoformat(),
+                    "workspace": after["payload"]["workspace"],
+                    "task": after["payload"],
+                    "comment": comment_payload(comment),
+                },
+                next_attempt_at=now,
+            )
+        )
     return created

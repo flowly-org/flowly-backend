@@ -127,3 +127,37 @@ EMAIL_INBOUND_DOMAIN = os.environ.get("EMAIL_INBOUND_DOMAIN", "")
 EMAIL_INBOUND_KEY = os.environ.get("EMAIL_INBOUND_KEY", "")
 # Outgoing webhooks may not target private/loopback addresses unless this is enabled.
 INTEGRATIONS_ALLOW_PRIVATE_URLS = os.environ.get("INTEGRATIONS_ALLOW_PRIVATE_URLS", "0") == "1"
+
+# File storage. Uploaded attachments go to an S3-compatible bucket (AWS S3, Cloudflare R2, MinIO…);
+# without S3_BUCKET, uploads are disabled and only links / cloud documents can be attached.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
+if S3_BUCKET:
+    STORAGES["attachments"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": S3_BUCKET,
+            "endpoint_url": os.environ.get("S3_ENDPOINT_URL") or None,
+            "access_key": os.environ.get("S3_ACCESS_KEY_ID", ""),
+            "secret_key": os.environ.get("S3_SECRET_ACCESS_KEY", ""),
+            "region_name": os.environ.get("S3_REGION") or None,
+            "addressing_style": os.environ.get("S3_ADDRESSING_STYLE") or None,
+            "signature_version": "s3v4",
+            "default_acl": None,
+            "file_overwrite": False,
+            "querystring_auth": True,
+            "querystring_expire": 300,
+        },
+    }
+ATTACHMENT_MAX_MB = int(os.environ.get("ATTACHMENT_MAX_MB", "25"))
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
+
+# Cloud document pickers (all optional; exposed to the browser through /api/config/).
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
+MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")

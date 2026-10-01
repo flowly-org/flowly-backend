@@ -15,6 +15,20 @@ from .models import Project, Tag, TagGroup, Task
 from .serializers import ProjectSerializer, TagGroupSerializer, TagSerializer, TaskSerializer
 
 
+def with_counts(queryset):
+    # Subqueries rather than joins: two to-many Counts in one query would multiply each other.
+    from django.db.models import IntegerField, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+
+    from .models import Attachment, Comment
+
+    def count(model):
+        sub = model.objects.filter(task=OuterRef("pk")).order_by().values("task").annotate(n=Count("id")).values("n")
+        return Coalesce(Subquery(sub, output_field=IntegerField()), 0)
+
+    return queryset.annotate(comment_count=count(Comment), attachment_count=count(Attachment))
+
+
 def save_appended(serializer, queryset, **extra):
     """Save a new ordered item, placing it last unless the client chose a position."""
     if "position" not in serializer.validated_data:
@@ -81,7 +95,7 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
     filterset_class = TaskFilter
 
     def get_queryset(self):
-        return self.workspace.tasks.prefetch_related("tags").select_related("status").order_by("position", "id")
+        return with_counts(self.workspace.tasks.prefetch_related("tags").select_related("status")).order_by("position", "id")
 
     # Task changes feed the workspace's outgoing integrations (webhooks, Slack, GitHub).
 
@@ -114,11 +128,9 @@ class MyTaskListView(generics.ListAPIView):
     filterset_class = TaskFilter
 
     def get_queryset(self):
-        return (
-            Task.objects.filter(workspace__memberships__user=self.request.user)
-            .prefetch_related("tags")
-            .order_by("position", "id")
-        )
+        return with_counts(
+            Task.objects.filter(workspace__memberships__user=self.request.user).prefetch_related("tags")
+        ).order_by("position", "id")
 
 
 class MyContextView(generics.GenericAPIView):

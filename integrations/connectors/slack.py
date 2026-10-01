@@ -10,6 +10,7 @@ ICONS = {
     "task.assigned": "👤",
     "task.updated": "✏️",
     "task.deleted": "🗑️",
+    "comment.created": "💬",
 }
 
 
@@ -27,6 +28,12 @@ def describe(event, payload):
         line = f"{title} assigned to *{who}*"
     elif event == "task.created":
         line = f"new task {title}"
+    elif event == "comment.created":
+        comment = payload["comment"]
+        who = comment["author"]["name"] or comment["author"]["email"] or "Someone"
+        excerpt = comment["body"].replace("\n", " ")
+        excerpt = excerpt[:140] + ("…" if len(excerpt) > 140 else "")
+        line = f"*{who}* commented on {title}: {excerpt}"
     elif event == "task.deleted":
         line = f"deleted {title}"
     else:

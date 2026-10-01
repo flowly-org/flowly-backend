@@ -109,6 +109,8 @@ class TaskSerializer(WorkspaceScopedSerializer):
     assignee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), allow_null=True, required=False)
     tags = serializers.PrimaryKeyRelatedField(queryset=Tag.objects.all(), many=True, required=False)
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+    comment_count = serializers.SerializerMethodField()
+    attachment_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -129,8 +131,18 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "created_at",
             "updated_at",
             "completed_at",
+            "comment_count",
+            "attachment_count",
         ]
         read_only_fields = ["id", "workspace", "created_by", "created_at", "updated_at", "completed_at"]
+
+    def get_comment_count(self, obj):
+        value = getattr(obj, "comment_count", None)
+        return obj.comments.count() if value is None else value
+
+    def get_attachment_count(self, obj):
+        value = getattr(obj, "attachment_count", None)
+        return obj.attachments.count() if value is None else value
 
     def validate_tags(self, tags):
         seen = {}

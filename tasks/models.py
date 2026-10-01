@@ -1,4 +1,7 @@
+import uuid
+
 from django.conf import settings
+from django.core.files.storage import Storage, storages
 from django.core.validators import RegexValidator
 from django.db import models
 
@@ -135,3 +138,98 @@ class Task(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Comment(models.Model):
+    """A message in a task's discussion. Comments can also arrive from integrations (e.g. GitHub)."""
+
+    class Source(models.TextChoices):
+        FLOWLY = "flowly", "Flowly"
+        GITHUB = "github", "GitHub"
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    body = models.TextField()
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.FLOWLY)
+    #: Display name for authors who aren't Flowly users (e.g. a GitHub login).
+    external_author = models.CharField(max_length=100, blank=True)
+    external_id = models.CharField(max_length=100, blank=True)
+    external_url = models.URLField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+
+class AttachmentStorage(Storage):
+    """Proxy resolving STORAGES["attachments"] on every call, so the bucket is optional and swappable."""
+
+    @property
+    def backend(self):
+        return storages["attachments"]
+
+    def save(self, name, content, max_length=None):
+        return self.backend.save(name, content, max_length=max_length)
+
+    def open(self, name, mode="rb"):
+        return self.backend.open(name, mode)
+
+    def delete(self, name):
+        return self.backend.delete(name)
+
+    def exists(self, name):
+        return self.backend.exists(name)
+
+    def size(self, name):
+        return self.backend.size(name)
+
+    def url(self, name):
+        return self.backend.url(name)
+
+    def generate_filename(self, filename):
+        return self.backend.generate_filename(filename)
+
+    def get_available_name(self, name, max_length=None):
+        return self.backend.get_available_name(name, max_length=max_length)
+
+
+def uploads_enabled():
+    return "attachments" in settings.STORAGES
+
+
+def attachments_storage():
+    return AttachmentStorage()
+
+
+def attachment_path(instance, filename):
+    return f"attachments/{instance.task.workspace_id}/{instance.task_id}/{uuid.uuid4().hex}/{filename}"
+
+
+class Attachment(models.Model):
+    """A document on a task: an uploaded file (S3) or a link to a cloud document."""
+
+    class Kind(models.TextChoices):
+        FILE = "file", "Uploaded file"
+        LINK = "link", "Link"
+        GOOGLE_DRIVE = "google_drive", "Google Drive"
+        ONEDRIVE = "onedrive", "OneDrive / SharePoint"
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="attachments")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    name = models.CharField(max_length=255)
+    url = models.URLField(max_length=2000, blank=True, help_text="For links and cloud documents.")
+    file = models.FileField(upload_to=attachment_path, storage=attachments_storage, max_length=500, blank=True)
+    size = models.BigIntegerField(null=True, blank=True)
+    content_type = models.CharField(max_length=150, blank=True)
+    #: Provider details (file id, icon URL, MIME type…).
+    meta = models.JSONField(default=dict, blank=True)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
