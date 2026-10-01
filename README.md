@@ -1,11 +1,11 @@
-# Multikanban – backend
+# Flowly – backend
 
-REST API for Multikanban: multi-user, multi-project daily task planning where a day's tasks
+REST API for Flowly: multi-user, multi-project daily task planning where a day's tasks
 are shown as a kanban board split into **swimlanes** by project, assignee or any tag group you define.
 
 Django 5.2 · Django REST Framework · SimpleJWT · PostgreSQL · drf-spectacular (OpenAPI)
 
-The Angular client lives in the separate `multikanban-frontend` repository.
+The Angular client lives in the separate `flowly-frontend` repository.
 
 ## Run it
 
@@ -21,7 +21,7 @@ Useful env vars (see `.env.example`): `API_PORT` (host port, default 8000), `DJA
 Run the tests (SQLite, no database container needed):
 
 ```bash
-docker build -t multikanban-backend . && docker run --rm --entrypoint python multikanban-backend manage.py test
+docker build -t flowly-backend . && docker run --rm --entrypoint python flowly-backend manage.py test
 ```
 
 Without Docker: Python 3.12+, `pip install -r requirements.txt`, `python manage.py migrate && python manage.py runserver`

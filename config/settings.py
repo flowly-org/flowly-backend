@@ -101,7 +101,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Multikanban API",
+    "TITLE": "Flowly API",
     "DESCRIPTION": "Multi-project, multi-user daily task planning with swimlanes.",
     "VERSION": "1.0.0",
 }
