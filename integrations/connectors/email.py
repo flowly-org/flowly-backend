@@ -1,7 +1,8 @@
 import re
 
-from django.conf import settings
 from django.utils import timezone
+
+from instance import conf
 
 from ..inbound import find_member, linked_task, upsert_task
 from ..models import Delivery
@@ -33,10 +34,10 @@ class Email(Connector):
         return {"allowed_senders": senders, "schedule": clean_schedule(config)}
 
     def info(self, integration):
-        domain = settings.EMAIL_INBOUND_DOMAIN
+        domain = conf.get("EMAIL_INBOUND_DOMAIN")
         return {
             "address": f"{integration.token}@{domain}" if domain else None,
-            "endpoint": f"{settings.PUBLIC_URL}/api/integrations/email/inbound/",
+            "endpoint": f"{conf.get("PUBLIC_URL")}/api/integrations/email/inbound/",
             "configured": bool(domain),
         }
 

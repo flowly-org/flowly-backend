@@ -1,9 +1,10 @@
 """Turns task changes into outgoing deliveries for the integrations that care."""
 
-from django.conf import settings
 from django.utils import timezone
 
 from tasks.models import Task
+
+from instance import conf
 
 from .models import Delivery, Integration
 
@@ -44,7 +45,7 @@ def snapshot(task: Task) -> dict:
 
 
 def board_url(workspace_id, planned_date=None):
-    base = settings.PUBLIC_URL
+    base = conf.get("PUBLIC_URL")
     if not base:
         return ""
     url = f"{base}/w/{workspace_id}/board"

@@ -1,5 +1,6 @@
-from django.conf import settings
 from rest_framework import serializers
+
+from instance import conf
 
 from ..crypto import decrypt, mask
 from .base import Connector
@@ -37,7 +38,7 @@ class OpenRouter(AIProvider):
     kind = "openrouter"
 
     def base_url(self, integration):
-        return settings.OPENROUTER_BASE_URL
+        return conf.get("OPENROUTER_BASE_URL")
 
     def clean_config(self, config, integration):
         return self.clean_common(config)

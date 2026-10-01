@@ -8,6 +8,7 @@ from tasks.views import MyContextView, MyTaskListView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
+    path("api/admin/", include("instance.urls")),
     path("api/config/", PublicConfigView.as_view(), name="public-config"),
     path("api/my/tasks/", MyTaskListView.as_view(), name="my-tasks"),
     path("api/my/context/", MyContextView.as_view(), name="my-context"),

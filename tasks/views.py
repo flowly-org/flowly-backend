@@ -12,7 +12,7 @@ from workspaces.permissions import WorkspaceScopedMixin
 from workspaces.serializers import MembershipSerializer
 
 from .filters import TaskFilter
-from .models import Project, Tag, TagGroup, Task
+from .models import Tag, TagGroup, Task
 from .serializers import ProjectSerializer, TagGroupSerializer, TagSerializer, TaskSerializer
 
 

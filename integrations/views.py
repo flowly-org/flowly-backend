@@ -14,6 +14,8 @@ from rest_framework.views import APIView
 from workspaces.models import Membership
 from workspaces.permissions import WorkspaceScopedMixin
 
+from instance import conf
+
 from . import github
 from .connectors import REGISTRY
 from .connectors.email import Email, parse_address, token_from_recipient
@@ -30,7 +32,7 @@ MANIFEST_SALT = "flowly.github.manifest"
 
 
 def public_base_url(request):
-    return settings.PUBLIC_URL or f"{request.scheme}://{request.get_host()}"
+    return conf.get("PUBLIC_URL") or f"{request.scheme}://{request.get_host()}"
 
 
 class IntegrationViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
@@ -270,7 +272,7 @@ class EmailInboundView(PublicView):
     """Inbound email in the formats of common providers (Cloudflare worker/JSON, Mailgun, SendGrid, Postmark)."""
 
     def post(self, request):
-        key = settings.EMAIL_INBOUND_KEY
+        key = conf.get("EMAIL_INBOUND_KEY")
         if key and key not in (request.query_params.get("key"), request.headers.get("X-Flowly-Key")):
             return Response({"detail": "Bad key."}, status=status.HTTP_401_UNAUTHORIZED)
         d = request.data

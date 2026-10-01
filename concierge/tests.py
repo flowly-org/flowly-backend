@@ -1,5 +1,5 @@
 import json
-from datetime import time, timedelta
+from datetime import timedelta
 from unittest import mock
 
 from django.test import override_settings

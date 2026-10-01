@@ -6,23 +6,27 @@ from django.conf import settings
 
 from integrations.http import send
 
+from instance import conf
+
 _me_cache: dict = {}
 
 
 def enabled() -> bool:
-    return bool(settings.TELEGRAM_BOT_TOKEN)
+    return bool(conf.get("TELEGRAM_BOT_TOKEN"))
 
 
 def call(method: str, **params):
-    url = f"{settings.TELEGRAM_API_URL}/bot{settings.TELEGRAM_BOT_TOKEN}/{method}"
+    url = f"{settings.TELEGRAM_API_URL}/bot{conf.get("TELEGRAM_BOT_TOKEN")}/{method}"
     res = send("POST", url, json=params, timeout=40, check_url=False).json()
     return res.get("result")
 
 
 def bot_username() -> str:
-    if "username" not in _me_cache:
-        _me_cache["username"] = (call("getMe") or {}).get("username", "")
-    return _me_cache["username"]
+    token = conf.get("TELEGRAM_BOT_TOKEN")
+    if token not in _me_cache:
+        _me_cache.clear()
+        _me_cache[token] = (call("getMe") or {}).get("username", "")
+    return _me_cache[token]
 
 
 def send_message(chat_id: int, text: str):

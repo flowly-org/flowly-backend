@@ -2,8 +2,9 @@ import hashlib
 import hmac
 import json
 
-from django.conf import settings
 from rest_framework import serializers
+
+from instance import conf
 
 from ..events import TASK_EVENTS
 from ..http import send
@@ -61,7 +62,7 @@ class IncomingWebhook(Connector):
         }
 
     def info(self, integration):
-        base = settings.PUBLIC_URL or ""
+        base = conf.get("PUBLIC_URL") or ""
         return {
             "url": f"{base}/api/hooks/{integration.token}/",
             "example": {

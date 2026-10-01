@@ -2,11 +2,12 @@
 
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
 from integrations.http import DeliveryError, send
+
+from instance import conf
 
 
 class LLMUnavailable(Exception):
@@ -25,9 +26,9 @@ class Provider:
 
     @classmethod
     def platform_default(cls):
-        if not settings.OPENROUTER_API_KEY:
+        if not conf.get("OPENROUTER_API_KEY"):
             return None
-        return cls(settings.OPENROUTER_BASE_URL, settings.OPENROUTER_API_KEY, settings.OPENROUTER_MODEL, "Flowly", platform=True)
+        return cls(conf.get("OPENROUTER_BASE_URL"), conf.get("OPENROUTER_API_KEY"), conf.get("OPENROUTER_MODEL"), "Flowly", platform=True)
 
     @classmethod
     def from_integration(cls, integration):
@@ -51,7 +52,7 @@ def chat(provider: Provider, messages, tools=None, max_tokens=700, user=None) ->
             u.prompt_tokens + u.completion_tokens
             for u in user_usage(user)
         )
-        if used >= settings.CONCIERGE_DAILY_TOKENS:
+        if used >= conf.get("CONCIERGE_DAILY_TOKENS"):
             raise LLMUnavailable("You've reached today's AI usage limit. It resets tomorrow.")
     body = {"model": provider.model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.3}
     if tools:
@@ -61,7 +62,7 @@ def chat(provider: Provider, messages, tools=None, max_tokens=700, user=None) ->
     if provider.api_key:
         headers["Authorization"] = f"Bearer {provider.api_key}"
     if provider.platform:
-        headers.update({"HTTP-Referer": settings.PUBLIC_URL or "https://flowly.net", "X-Title": "Flowly"})
+        headers.update({"HTTP-Referer": conf.get("PUBLIC_URL") or "https://flowly.net", "X-Title": "Flowly"})
     res = send(
         "POST", f"{provider.base_url}/chat/completions", json=body, headers=headers,
         timeout=60, check_url=not provider.platform,

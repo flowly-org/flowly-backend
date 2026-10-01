@@ -41,7 +41,7 @@ class DiscussionTests(APITestCase):
         self.assertEqual([x["body"] for x in self.client.get(f"{self.base}/comments/").data], ["Edited", "Reply"])
         tasks = self.client.get(f"/api/workspaces/{self.ws['id']}/tasks/").data
         self.assertEqual((tasks[0]["comment_count"], tasks[0]["attachment_count"]), (2, 0))
-        self.assertEqual(self.client.get(f"/api/my/tasks/").data[0]["comment_count"], 2)
+        self.assertEqual(self.client.get("/api/my/tasks/").data[0]["comment_count"], 2)
 
     def test_links_and_cloud_documents(self):
         res = self.client.post(

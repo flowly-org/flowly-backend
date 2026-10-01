@@ -2,7 +2,6 @@
 
 from urllib.parse import urlparse
 
-from django.conf import settings
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.shortcuts import get_object_or_404
@@ -16,6 +15,8 @@ from rest_framework.views import APIView
 
 from accounts.serializers import UserSerializer
 from workspaces.permissions import WorkspaceScopedMixin
+
+from instance import conf
 
 from .models import Attachment, Comment, uploads_enabled
 
@@ -52,8 +53,8 @@ class AttachmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({"file": "File uploads aren't configured on this server."})
             if upload is None:
                 raise serializers.ValidationError({"file": "Choose a file."})
-            if upload.size > settings.ATTACHMENT_MAX_MB * 1024 * 1024:
-                raise serializers.ValidationError({"file": f"Files can be at most {settings.ATTACHMENT_MAX_MB} MB."})
+            if upload.size > conf.get("ATTACHMENT_MAX_MB") * 1024 * 1024:
+                raise serializers.ValidationError({"file": f"Files can be at most {conf.get("ATTACHMENT_MAX_MB")} MB."})
             attrs["name"] = (attrs.get("name") or upload.name)[:255]
             attrs["size"] = upload.size
             attrs["content_type"] = (getattr(upload, "content_type", "") or "")[:150]
@@ -148,14 +149,14 @@ class PublicConfigView(APIView):
 
     def get(self, request):
         google = (
-            {"client_id": settings.GOOGLE_CLIENT_ID, "api_key": settings.GOOGLE_API_KEY, "app_id": settings.GOOGLE_APP_ID}
-            if settings.GOOGLE_CLIENT_ID and settings.GOOGLE_API_KEY
+            {"client_id": conf.get("GOOGLE_CLIENT_ID"), "api_key": conf.get("GOOGLE_API_KEY"), "app_id": conf.get("GOOGLE_APP_ID")}
+            if conf.get("GOOGLE_CLIENT_ID") and conf.get("GOOGLE_API_KEY")
             else None
         )
-        microsoft = {"client_id": settings.MICROSOFT_CLIENT_ID} if settings.MICROSOFT_CLIENT_ID else None
+        microsoft = {"client_id": conf.get("MICROSOFT_CLIENT_ID")} if conf.get("MICROSOFT_CLIENT_ID") else None
         return Response(
             {
-                "uploads": {"enabled": uploads_enabled(), "max_mb": settings.ATTACHMENT_MAX_MB},
+                "uploads": {"enabled": uploads_enabled(), "max_mb": conf.get("ATTACHMENT_MAX_MB")},
                 "google": google,
                 "microsoft": microsoft,
             }

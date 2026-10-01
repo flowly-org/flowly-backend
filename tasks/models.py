@@ -164,12 +164,48 @@ class Comment(models.Model):
         ordering = ["created_at", "id"]
 
 
+_s3_cache: dict = {}
+
+
+def s3_options():
+    from instance import conf
+
+    bucket = conf.get("S3_BUCKET")
+    if not bucket:
+        return None
+    return {
+        "bucket_name": bucket,
+        "endpoint_url": conf.get("S3_ENDPOINT_URL") or None,
+        "access_key": conf.get("S3_ACCESS_KEY_ID"),
+        "secret_key": conf.get("S3_SECRET_ACCESS_KEY"),
+        "region_name": conf.get("S3_REGION") or None,
+        "addressing_style": conf.get("S3_ADDRESSING_STYLE") or None,
+        "signature_version": "s3v4",
+        "default_acl": None,
+        "file_overwrite": False,
+        "querystring_auth": True,
+        "querystring_expire": 300,
+    }
+
+
 class AttachmentStorage(Storage):
-    """Proxy resolving STORAGES["attachments"] on every call, so the bucket is optional and swappable."""
+    """Proxy to the attachments backend: the admin-configured S3 bucket (rebuilt when its settings change),
+    or STORAGES["attachments"] when defined (tests, custom deployments)."""
 
     @property
     def backend(self):
-        return storages["attachments"]
+        if "attachments" in settings.STORAGES:
+            return storages["attachments"]
+        options = s3_options()
+        if options is None:
+            raise RuntimeError("File uploads aren't configured.")
+        key = tuple(sorted((k, str(v)) for k, v in options.items()))
+        if key not in _s3_cache:
+            from storages.backends.s3 import S3Storage
+
+            _s3_cache.clear()
+            _s3_cache[key] = S3Storage(**options)
+        return _s3_cache[key]
 
     def save(self, name, content, max_length=None):
         return self.backend.save(name, content, max_length=max_length)
@@ -197,7 +233,7 @@ class AttachmentStorage(Storage):
 
 
 def uploads_enabled():
-    return "attachments" in settings.STORAGES
+    return "attachments" in settings.STORAGES or s3_options() is not None
 
 
 def attachments_storage():

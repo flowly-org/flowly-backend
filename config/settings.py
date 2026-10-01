@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "tasks",
     "integrations",
     "concierge",
+    "instance",
 ]
 
 MIDDLEWARE = [
@@ -136,23 +137,11 @@ STORAGES = {
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
 S3_BUCKET = os.environ.get("S3_BUCKET", "")
-if S3_BUCKET:
-    STORAGES["attachments"] = {
-        "BACKEND": "storages.backends.s3.S3Storage",
-        "OPTIONS": {
-            "bucket_name": S3_BUCKET,
-            "endpoint_url": os.environ.get("S3_ENDPOINT_URL") or None,
-            "access_key": os.environ.get("S3_ACCESS_KEY_ID", ""),
-            "secret_key": os.environ.get("S3_SECRET_ACCESS_KEY", ""),
-            "region_name": os.environ.get("S3_REGION") or None,
-            "addressing_style": os.environ.get("S3_ADDRESSING_STYLE") or None,
-            "signature_version": "s3v4",
-            "default_acl": None,
-            "file_overwrite": False,
-            "querystring_auth": True,
-            "querystring_expire": 300,
-        },
-    }
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "")
+S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID", "")
+S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "")
+S3_REGION = os.environ.get("S3_REGION", "")
+S3_ADDRESSING_STYLE = os.environ.get("S3_ADDRESSING_STYLE", "")
 ATTACHMENT_MAX_MB = int(os.environ.get("ATTACHMENT_MAX_MB", "25"))
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024

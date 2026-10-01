@@ -1,12 +1,13 @@
 from datetime import timedelta
 
-from django.conf import settings
 from django.utils import timezone
 from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from integrations.models import Integration
+
+from instance import conf
 
 from . import brain, telegram
 from .bot import handle_update
@@ -85,7 +86,7 @@ class ConciergeView(APIView):
                 "has_pro": user.has_pro,
                 "available": brain.availability(user) is None,
                 "unavailable_reason": brain.availability(user),
-                "platform_ai": bool(settings.OPENROUTER_API_KEY),
+                "platform_ai": bool(conf.get("OPENROUTER_API_KEY")),
                 "telegram": {
                     "configured": telegram.enabled(),
                     "bot": bot_name,
@@ -106,7 +107,7 @@ class ConciergeView(APIView):
                 ],
                 "memory": profile.memory,
                 "usage_today": used,
-                "daily_limit": settings.CONCIERGE_DAILY_TOKENS,
+                "daily_limit": conf.get("CONCIERGE_DAILY_TOKENS"),
             }
         )
 
@@ -176,7 +177,7 @@ class TelegramWebhookView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        secret = settings.TELEGRAM_WEBHOOK_SECRET
+        secret = conf.get("TELEGRAM_WEBHOOK_SECRET")
         if not secret or request.headers.get("X-Telegram-Bot-Api-Secret-Token") != secret:
             return Response(status=status.HTTP_401_UNAUTHORIZED)
         handle_update(request.data)

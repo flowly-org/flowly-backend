@@ -4,10 +4,8 @@ import logging
 import time
 from datetime import datetime, timedelta
 
-from django.conf import settings
-from django.utils import timezone
-
 from integrations.http import DeliveryError
+from instance import conf
 
 from . import bot, brain, notify, telegram
 from .models import BotState, ConciergeProfile, Notification
@@ -46,7 +44,7 @@ def send_alerts(limit=20):
 
 
 def poll_updates():
-    if settings.TELEGRAM_MODE != "polling":
+    if conf.get("TELEGRAM_MODE") != "polling":
         return
     state, _ = BotState.objects.get_or_create(key="telegram_offset", defaults={"value": ""})
     offset = int(state.value) if state.value else None
