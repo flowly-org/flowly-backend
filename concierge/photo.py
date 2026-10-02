@@ -25,7 +25,8 @@ Rules:
 - One task per line, starting with "- ". Keep the wording and the language of the list; fix only obvious misspellings.
 - Items that are ticked, checked or crossed out start with "- [x] ".
 - A line written indented under an item (a detail or sub-point of it, usually without its own bullet) is a note of
-  that item: write it on the next line, indented by two spaces and without "- ".
+  that item: write it on the next line, indented by two spaces and without "- ". When the items of the list start
+  with a dash, bullet, number or checkbox, a line without one is a note of the item above, even if barely indented.
 - A date or weekday written next to an item: replace it with @YYYY-MM-DD at the end of the line (today is {today},
   a {weekday}; a weekday means the next one), and leave the date words out of the title.
 - Only if the list clearly marks it: !{priorities} for priority, +Project for one of these projects: {projects};
