@@ -68,6 +68,8 @@ class FakeStripe:
                                int(data.get("items[0][price_data][unit_amount]", 600)))
             self.subs[sub["id"]] = sub
             return 200, sub
+        if path.startswith("subscriptions/") and method == "DELETE":
+            return 200, {**self.subs.get(path[14:], {}), "status": "canceled"}
         if path.startswith("subscriptions/"):
             sub = self.subs[path[14:]]
             if "cancel_at_period_end" in data:
@@ -119,6 +121,9 @@ class StripeTests(APITestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         services._price_cache.update(data=None, at=0.0)
+        from instance import conf
+
+        conf.clear_cache()  # settings are cached per process for a few seconds
         auth = self.client.post("/api/auth/register/", {"email": "pay@example.com", "password": "s3cure-Passw0rd", "full_name": "Pay"}).data
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
         self.user = User.objects.get(email="pay@example.com")
@@ -152,7 +157,7 @@ class StripeTests(APITestCase):
     def test_setup_checkout_webhooks_and_portal(self):
         self.assertFalse(self.client.get("/api/billing/plan/").data["stripe"])
         created = self.set_up_stripe()["created"]
-        self.assertEqual(set(created), {"pro", "enterprise", "portal", "webhook"})
+        self.assertEqual(set(created), {"pro", "pro_plus", "enterprise", "portal", "webhook"})
         self.assertEqual(self.set_up_stripe()["created"], {})  # idempotent
         plan = self.client.get("/api/billing/plan/").data
         self.assertTrue(plan["stripe"])
@@ -265,3 +270,29 @@ class StripeTests(APITestCase):
         from concierge.models import Notification
 
         self.assertTrue(Notification.objects.filter(user=self.user, title__contains="paid online").exists())
+
+
+    def test_pro_plus_checkout_and_upgrade_from_pro(self):
+        self.set_up_stripe()
+        plans = self.client.get("/api/billing/plan/").data["plans"]
+        self.assertEqual(plans["pro_plus"]["month"]["amount"], 1000)
+        self.assertEqual(plans["pro_plus"]["year"]["amount"], 10000)
+        self.client.post("/api/billing/checkout/", {"interval": "month", "plan": "pro"}, format="json")
+        customer = Customer.objects.get(user=self.user)
+        pro = subscription("sub_pro", customer.customer_id, "active", "pro", 600)
+        self.stripe.subs["sub_pro"] = pro
+        self.webhook({"id": "e1", "type": "customer.subscription.created", "data": {"object": pro}})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.plan, "pro")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.client.post('/api/auth/login/', {'email': 'pay@example.com', 'password': 's3cure-Passw0rd'}).data['access']}")
+        res = self.client.post("/api/billing/checkout/", {"interval": "year", "plan": "pro_plus"}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        session = [c[2] for c in self.stripe.calls if c[1] == "checkout/sessions"][-1]
+        self.assertEqual(session["subscription_data[metadata][kind]"], "pro_plus")
+        plus = subscription("sub_plus", customer.customer_id, "active", "pro_plus", 10000, "year", days=365)
+        self.webhook({"id": "e2", "type": "customer.subscription.created", "data": {"object": plus}})
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.plan, "pro_plus")
+        self.assertTrue(self.user.has_pro_plus and self.user.has_pro)
+        self.assertTrue(any(c[0] == "DELETE" and c[1] == "subscriptions/sub_pro" for c in self.stripe.calls))  # old Pro ended
+        self.assertEqual(Subscription.objects.get(subscription_id="sub_pro").status, "canceled")

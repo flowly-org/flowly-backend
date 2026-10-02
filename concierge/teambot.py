@@ -141,7 +141,7 @@ def reply(integration, actor, author: str, text: str, platform: str) -> str:
     try:
         answer = ""
         for _ in range(MAX_STEPS):
-            result = chat(provider, messages, tools=tools, max_tokens=700)
+            result = chat(provider, messages, tools=tools, max_tokens=2500)
             record_usage(identity, usage_label, result["usage"])
             message = result["message"]
             calls = message.get("tool_calls") or []

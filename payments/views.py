@@ -27,11 +27,16 @@ class PlanView(APIView):
 
     def get(self, request):
         user = request.user
-        sub = Subscription.objects.filter(customer__user=user, kind="pro").order_by("-updated_at").first()
+        sub = (Subscription.objects.filter(customer__user=user, kind__in=["pro", "pro_plus"], status__in=Subscription.LIVE)
+               .order_by("-updated_at").first()
+               or Subscription.objects.filter(customer__user=user, kind__in=["pro", "pro_plus"]).order_by("-updated_at").first())
+        prices = services.plan_prices()
         return Response({
             "stripe": services.enabled(),
-            "prices": services.pro_prices(),
-            "plan": user.plan, "has_pro": user.has_pro, "source": user.plan_source, "expires_at": user.plan_expires_at,
+            "prices": (prices or {}).get("pro"),
+            "plans": prices,
+            "plan": user.plan, "has_pro": user.has_pro, "has_pro_plus": user.has_pro_plus, "source": user.plan_source,
+            "expires_at": user.plan_expires_at,
             "subscription": sub_data(sub),
             "can_manage": sub is not None,
         })
@@ -41,11 +46,12 @@ class CheckoutView(APIView):
     def post(self, request):
         if not services.enabled():
             return Response({"detail": "Payments aren't set up on this server yet."}, status=400)
-        live = Subscription.objects.filter(customer__user=request.user, kind="pro", status__in=Subscription.LIVE).exists()
-        if live:
-            return Response({"detail": "You already have Pro: manage it from Settings → Plan."}, status=400)
+        plan = request.data.get("plan", "pro")
+        live = Subscription.objects.filter(customer__user=request.user, status__in=Subscription.LIVE)
+        if live.filter(kind=plan).exists() or (plan == "pro" and live.filter(kind="pro_plus").exists()):
+            return Response({"detail": "You already have this plan: manage it from Settings → Plan."}, status=400)
         try:
-            return Response({"url": services.checkout(request.user, request.data.get("interval", "month"))})
+            return Response({"url": services.checkout(request.user, request.data.get("interval", "month"), plan)})
         except (ValueError, StripeError) as exc:
             return Response({"detail": str(exc)}, status=400)
 

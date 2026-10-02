@@ -168,6 +168,7 @@ class Comment(models.Model):
     class Source(models.TextChoices):
         FLOWLY = "flowly", "Flowly"
         GITHUB = "github", "GitHub"
+        AI = "ai", "AI delegation"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(

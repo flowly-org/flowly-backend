@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "timetracking",
     "calendars",
     "payments",
+    "delegation",
 ]
 
 MIDDLEWARE = [
@@ -164,6 +165,11 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_PRO_MONTH = os.environ.get("STRIPE_PRICE_PRO_MONTH", "")
 STRIPE_PRICE_PRO_YEAR = os.environ.get("STRIPE_PRICE_PRO_YEAR", "")
 STRIPE_PRODUCT_ENTERPRISE = os.environ.get("STRIPE_PRODUCT_ENTERPRISE", "")
+STRIPE_PRICE_PLUS_MONTH = os.environ.get("STRIPE_PRICE_PLUS_MONTH", "")
+STRIPE_PRICE_PLUS_YEAR = os.environ.get("STRIPE_PRICE_PLUS_YEAR", "")
+DELEGATION_MODEL = os.environ.get("DELEGATION_MODEL", "")
+DELEGATION_TRIAGE_MODEL = os.environ.get("DELEGATION_TRIAGE_MODEL", "")
+DELEGATION_SEARCH_MODEL = os.environ.get("DELEGATION_SEARCH_MODEL", "")
 STRIPE_PORTAL_CONFIG = os.environ.get("STRIPE_PORTAL_CONFIG", "")
 STRIPE_AUTOMATIC_TAX = os.environ.get("STRIPE_AUTOMATIC_TAX", "1") == "1"
 SLACK_CLIENT_SECRET = os.environ.get("SLACK_CLIENT_SECRET", "")

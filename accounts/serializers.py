@@ -7,11 +7,13 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     has_pro = serializers.BooleanField(read_only=True)
+    has_pro_plus = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro", "is_bot"]
-        read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "is_bot"]
+        fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro",
+                  "has_pro_plus", "is_bot"]
+        read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "has_pro_plus", "is_bot"]
 
     def update(self, instance, validated_data):
         home_changed = "home_location" in validated_data and validated_data["home_location"] != instance.home_location

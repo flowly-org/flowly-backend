@@ -82,7 +82,7 @@ def system_prompt(user, now: datetime) -> str:
     )
 
 
-def run(user, messages, *, tools=True, max_tokens=700) -> str:
+def run(user, messages, *, tools=True, max_tokens=2500) -> str:
     provider = provider_for(user)
     toolbox = Toolbox(user, provider, local_now(user).date())
     for _ in range(MAX_STEPS):
@@ -157,6 +157,17 @@ def brief(user) -> str:
 
     calendar = cal.brief_context(user, now.date(), now.tzinfo, toolbox._tasks())
     calendar_text = f"\n\n{cal.BRIEF_RULES}\n{calendar}" if calendar else ""
+    try:
+        from delegation.engine import suggestions
+
+        delegable = suggestions(user, now.date())
+    except Exception:
+        log.exception("Delegation suggestions failed")
+        delegable = []
+    if delegable:
+        calendar_text += ("\n\nTasks the AI agent could take on (offer them in one short line each; the user can reply "
+                          "'yes' and you call delegate_task):\n" + "\n".join(
+                              f"- #{t.id} {t.title}: {'can do it' if d.verdict == 'full' else 'can do part'}: {d.plan}" for t, d in delegable))
     messages = [
         {"role": "system", "content": system_prompt(user, now)},
         {"role": "user", "content": (
@@ -166,7 +177,7 @@ def brief(user) -> str:
         )},
     ]
     try:
-        text = run(user, messages, tools=False, max_tokens=800 if calendar else 600)
+        text = run(user, messages, tools=False, max_tokens=2500)  # reasoning models think before answering
     except (DeliveryError, LLMUnavailable) as exc:
         log.warning("Brief fell back to plain text for %s: %s", user.pk, exc)
         return plain_brief(user, now)

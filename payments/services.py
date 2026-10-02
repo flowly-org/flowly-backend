@@ -19,6 +19,13 @@ from .stripe_api import StripeError
 log = logging.getLogger("flowly.payments")
 GRACE = timedelta(days=3)
 PRO_PRICES = {"month": 600, "year": 6000}  # cents, before VAT
+PLUS_PRICES = {"month": 1000, "year": 10000}
+#: plan → (conf key prefix, prices, product name, description)
+PLANS = {
+    "pro": ("STRIPE_PRICE_PRO", PRO_PRICES, "Flowly Pro", "Personal concierge, AI features and invoices."),
+    "pro_plus": ("STRIPE_PRICE_PLUS", PLUS_PRICES, "Flowly Pro Plus", "Everything in Pro, plus tasks delegated to an AI agent."),
+}
+RANK = {"pro": 1, "pro_plus": 2}
 EVENTS = ["checkout.session.completed", "customer.subscription.created", "customer.subscription.updated",
           "customer.subscription.deleted", "invoice.payment_failed", "invoice.paid"]
 
@@ -41,16 +48,18 @@ def api(method, path, params=None, **kw):
 def setup() -> dict:
     """Create (once) the products, prices, customer portal and webhook endpoint on Flowly's Stripe account."""
     done = {}
-    if not conf.get("STRIPE_PRICE_PRO_MONTH") or not conf.get("STRIPE_PRICE_PRO_YEAR"):
-        product = api("POST", "products", {"name": "Flowly Pro", "description": "Personal concierge, AI features and invoices.",
-                                           "metadata": {"flowly": "pro"}}, idempotency_key="flowly-product-pro")
-        for interval, cents in PRO_PRICES.items():
+    for plan, (prefix, prices, name, description) in PLANS.items():
+        if conf.get(f"{prefix}_MONTH") and conf.get(f"{prefix}_YEAR"):
+            continue
+        product = api("POST", "products", {"name": name, "description": description, "metadata": {"flowly": plan}},
+                      idempotency_key=f"flowly-product-{plan}")
+        for interval, cents in prices.items():
             price = api("POST", "prices", {
                 "product": product["id"], "currency": "eur", "unit_amount": cents, "recurring": {"interval": interval},
-                "tax_behavior": "exclusive", "lookup_key": f"flowly_pro_{interval}", "transfer_lookup_key": True,
+                "tax_behavior": "exclusive", "lookup_key": f"flowly_{plan}_{interval}", "transfer_lookup_key": True,
             })
-            conf.set_value(f"STRIPE_PRICE_PRO_{interval.upper()}", price["id"])
-        done["pro"] = product["id"]
+            conf.set_value(f"{prefix}_{interval.upper()}", price["id"])
+        done[plan] = product["id"]
     if not conf.get("STRIPE_PRODUCT_ENTERPRISE"):
         product = api("POST", "products", {"name": "Flowly Enterprise", "description": "Team bots and the workspace's own AI provider.",
                                            "metadata": {"flowly": "enterprise"}}, idempotency_key="flowly-product-enterprise")
@@ -84,22 +93,30 @@ def setup() -> dict:
 _price_cache: dict = {"at": 0.0, "data": None}
 
 
-def pro_prices() -> dict | None:
-    """{"month": {"amount": 600, "currency": "eur"}, "year": {...}} from Stripe (cached for an hour)."""
+def plan_prices() -> dict | None:
+    """{"pro": {"month": {"amount": 600, "currency": "eur", "tax": …}, "year": …}, "pro_plus": …} (cached an hour)."""
     if not enabled():
         return None
     if _price_cache["data"] is None or time.monotonic() - _price_cache["at"] > 3600:
         try:
             data = {}
-            for interval in ("month", "year"):
-                price = api("GET", f"prices/{conf.get(f'STRIPE_PRICE_PRO_{interval.upper()}')}")
-                data[interval] = {"amount": price["unit_amount"], "currency": price["currency"],
-                                  "tax": price.get("tax_behavior", "exclusive")}
+            for plan, (prefix, *_rest) in PLANS.items():
+                if not conf.get(f"{prefix}_MONTH"):
+                    continue
+                data[plan] = {}
+                for interval in ("month", "year"):
+                    price = api("GET", f"prices/{conf.get(f'{prefix}_{interval.upper()}')}")
+                    data[plan][interval] = {"amount": price["unit_amount"], "currency": price["currency"],
+                                            "tax": price.get("tax_behavior", "exclusive")}
             _price_cache.update(data=data, at=time.monotonic())
         except StripeError as exc:
             log.warning("Stripe prices: %s", exc)
             return None
     return _price_cache["data"]
+
+
+def pro_prices() -> dict | None:
+    return (plan_prices() or {}).get("pro")
 
 
 # --- Pro (self-serve) -----------------------------------------------------------
@@ -114,20 +131,22 @@ def customer_for_user(user) -> Customer:
     return Customer.objects.create(user=user, customer_id=data["id"])
 
 
-def checkout(user, interval: str) -> str:
+def checkout(user, interval: str, plan: str = "pro") -> str:
     if interval not in ("month", "year"):
         raise ValueError("interval must be month or year")
+    if plan not in PLANS or not conf.get(f"{PLANS[plan][0]}_{interval.upper()}"):
+        raise ValueError("Unknown plan.")
     customer = customer_for_user(user)
     app = conf.get("PUBLIC_URL")
     params = {
         "mode": "subscription",
         "customer": customer.customer_id,
-        "line_items": [{"price": conf.get(f"STRIPE_PRICE_PRO_{interval.upper()}"), "quantity": 1}],
+        "line_items": [{"price": conf.get(f"{PLANS[plan][0]}_{interval.upper()}"), "quantity": 1}],
         "success_url": f"{app}/settings?pro=success#plan",
         "cancel_url": f"{app}/settings?pro=cancelled#plan",
         "allow_promotion_codes": True,
         "client_reference_id": str(user.id),
-        "subscription_data": {"metadata": {"kind": "pro", "flowly_user": user.id}},
+        "subscription_data": {"metadata": {"kind": plan, "flowly_user": user.id}},
         "customer_update": {"address": "auto", "name": "auto"},
         "tax_id_collection": {"enabled": True},
         "billing_address_collection": "required",
@@ -164,12 +183,22 @@ def sync(sub: dict) -> Subscription | None:
     kind = (sub.get("metadata") or {}).get("kind") or ("enterprise" if customer.workspace_id else "pro")
     item = ((sub.get("items") or {}).get("data") or [{}])[0]
     price = item.get("price") or {}
-    row, _ = Subscription.objects.update_or_create(subscription_id=sub["id"], defaults={
+    row, created = Subscription.objects.update_or_create(subscription_id=sub["id"], defaults={
         "kind": kind, "customer": customer, "status": sub["status"],
         "interval": (price.get("recurring") or {}).get("interval", ""), "amount": price.get("unit_amount") or 0,
         "currency": price.get("currency") or "eur", "current_period_end": _ts(stripe_api.period_end(sub)),
         "cancel_at_period_end": bool(sub.get("cancel_at_period_end")),
     })
+    if row.live and row.kind == "pro_plus":
+        # Upgrading from Pro: end the old Pro subscription now, with a prorated credit.
+        for old in customer.subscriptions.filter(kind="pro").exclude(pk=row.pk):
+            if old.live:
+                try:
+                    api("DELETE", f"subscriptions/{old.subscription_id}", {"prorate": True})
+                    old.status = "canceled"
+                    old.save(update_fields=["status"])
+                except StripeError as exc:
+                    log.warning("Could not cancel Pro %s after the Pro Plus upgrade: %s", old.subscription_id, exc)
     apply(customer)
     return row
 
@@ -177,11 +206,11 @@ def sync(sub: dict) -> Subscription | None:
 def apply(customer: Customer):
     """The plan follows the best live subscription; when none is left, Stripe-granted plans end."""
     live = [s for s in customer.subscriptions.all() if s.live]
-    best = max(live, key=lambda s: s.current_period_end or timezone.now(), default=None)
+    best = max(live, key=lambda s: (RANK.get(s.kind, 0), s.current_period_end or timezone.now()), default=None)
     if customer.user_id:
         user = customer.user
         if best:
-            user.plan, user.plan_source = "pro", "stripe"
+            user.plan, user.plan_source = (best.kind if best.kind in RANK else "pro"), "stripe"
             user.plan_expires_at = (best.current_period_end + GRACE) if best.current_period_end else None
         elif user.plan_source == "stripe":
             user.plan, user.plan_expires_at = "free", None

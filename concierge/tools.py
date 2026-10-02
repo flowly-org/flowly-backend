@@ -118,6 +118,9 @@ class Toolbox:
          "parameters": {"type": "object", "required": ["event_id", "decision"], "properties": {
              "event_id": {"type": "integer"},
              "decision": {"type": "string", "enum": ["confirmed", "background", "needed", "auto"]}}}},
+        {"name": "delegate_task", "description": "Hand a task to the AI agent (Pro Plus): it researches, drafts or plans "
+         "and reports back on the task. Use when the user agrees to delegate.",
+         "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
         {"name": "remember", "description": "Save a lasting note about the user's preferences or context.",
          "parameters": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string"}}}},
     ]
@@ -349,6 +352,17 @@ class Toolbox:
         else:
             decide(event, prep=decision)
         return f"“{event.title}”: {decision}."
+
+    def tool_delegate_task(self, task_id):
+        from delegation import engine
+
+        task = self._task(task_id)
+        try:
+            d = engine.request(task, self.user, run=True)
+        except (PermissionError, ValueError) as exc:
+            return f"Error: {exc}"
+        used = engine.quota(self.user)
+        return f"Delegated #{task.id} “{task.title}” (delegation {d.id}; {used['used']}/{used['limit']} this month). I'll report on the task when done."
 
     def tool_remember(self, note):
         profile = self.user.concierge
