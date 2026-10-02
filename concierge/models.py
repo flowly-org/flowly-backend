@@ -100,3 +100,36 @@ class BotState(models.Model):
 
     key = models.CharField(max_length=50, unique=True)
     value = models.CharField(max_length=200)
+
+
+class TeamMessage(models.Model):
+    """Recent conversation of a team chat (Telegram group, Slack), so follow-up questions have context."""
+
+    integration = models.ForeignKey("integrations.Integration", on_delete=models.CASCADE, related_name="team_messages")
+    role = models.CharField(max_length=10)
+    author = models.CharField(max_length=120, blank=True)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+
+class BotJob(models.Model):
+    """Work a chat platform handed us that must be answered later (Slack wants a reply within 3 seconds)."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        DONE = "done", "Done"
+        FAILED = "failed", "Failed"
+
+    kind = models.CharField(max_length=30)
+    integration = models.ForeignKey("integrations.Integration", null=True, on_delete=models.CASCADE, related_name="+")
+    payload = models.JSONField(default=dict)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]

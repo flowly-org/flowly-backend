@@ -32,7 +32,17 @@ def handle_update(update: dict):
     text = (message.get("text") or "").strip()
     chat_id = chat.get("id")
     image = image_of(message)
-    if not chat_id or not (text or image) or chat.get("type") != "private":
+    if not chat_id or not (text or image or message.get("caption")):
+        return
+    if chat.get("type") in ("group", "supergroup"):
+        from . import teamchat_telegram
+
+        try:
+            return teamchat_telegram.handle(message)
+        except Exception:
+            log.exception("Telegram group update failed")
+            return
+    if chat.get("type") != "private":
         return
     try:
         if image:

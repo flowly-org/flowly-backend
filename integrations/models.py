@@ -30,6 +30,8 @@ class Integration(models.Model):
         EMAIL = "email", "Email in"
         OPENROUTER = "openrouter", "OpenRouter"
         OPENAI_COMPATIBLE = "openai_compatible", "OpenAI-compatible endpoint"
+        TELEGRAM_GROUP = "telegram_group", "Telegram group"
+        SLACK_BOT = "slack_bot", "Slack app"
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="integrations")
     project = models.ForeignKey(

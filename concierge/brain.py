@@ -29,6 +29,7 @@ def provider_for(user) -> Provider | None:
     if (
         integration is not None
         and integration.enabled
+        and integration.workspace.is_enterprise
         and integration.workspace.memberships.filter(user=user).exists()
     ):
         return Provider.from_integration(integration)

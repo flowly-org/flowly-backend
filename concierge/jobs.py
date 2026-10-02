@@ -15,6 +15,11 @@ _last_brief_check = 0.0
 
 
 def tick():
+    for job in (team_jobs, team_briefs):
+        try:
+            job()
+        except Exception:
+            log.exception("%s crashed", job.__name__)
     if not telegram.enabled():
         return
     for job in (send_alerts, poll_updates, send_briefs):
@@ -78,3 +83,33 @@ def send_briefs():
         text = brain.brief(user)
         telegram.send_message(profile.telegram_chat_id, text)
         notify.create(user, Notification.Kind.BRIEF, f"Your brief for {now:%A %d %B}", text, telegram=Notification.Telegram.SENT)
+
+
+def team_jobs():
+    from . import teamchat_slack
+
+    teamchat_slack.process()
+
+
+_last_team_brief_check = 0.0
+
+
+def team_briefs():
+    """Morning team briefs in linked Telegram groups and Slack channels (Enterprise)."""
+    global _last_team_brief_check
+    if time.monotonic() - _last_team_brief_check < 60:
+        return
+    _last_team_brief_check = time.monotonic()
+    from integrations.connectors.teamchat import SlackBot
+
+    from . import teambot
+
+    for integration in teambot.due_briefs():
+        text = teambot.brief(integration)
+        try:
+            if integration.kind == "telegram_group":
+                telegram.send_message(integration.config["chat_id"], text)
+            else:
+                SlackBot.api(integration, "chat.postMessage", channel=integration.config["channel"], text=text)
+        except DeliveryError as exc:
+            log.warning("Team brief for integration %s failed: %s", integration.pk, exc)

@@ -10,6 +10,7 @@ class AIProvider(Connector):
     """An LLM endpoint a workspace provides for AI features (the concierge, for now)."""
 
     has_secret = True
+    enterprise = True
 
     def base_url(self, integration) -> str:
         raise NotImplementedError

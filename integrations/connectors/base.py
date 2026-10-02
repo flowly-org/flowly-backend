@@ -11,6 +11,8 @@ class Connector:
     outgoing = False
     #: Events used when the config doesn't pick any.
     default_events: list[str] = []
+    #: Only workspaces on the Enterprise plan can add it (team bots, own AI providers).
+    enterprise = False
 
     def clean_config(self, config: dict, integration) -> dict:
         """Validate and normalise user-supplied config; raise serializers.ValidationError."""

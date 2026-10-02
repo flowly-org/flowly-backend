@@ -10,4 +10,6 @@ urlpatterns = [
     path("github-app/", views.GitHubAppAdminView.as_view(), name="admin-github-app"),
     path("users/", views.UsersView.as_view(), name="admin-users"),
     path("users/<int:pk>/", views.UserDetailView.as_view(), name="admin-user"),
+    path("workspaces/", views.WorkspacesView.as_view(), name="admin-workspaces"),
+    path("workspaces/<int:pk>/", views.WorkspaceDetailView.as_view(), name="admin-workspace"),
 ]

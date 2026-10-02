@@ -42,7 +42,7 @@ def provider_for(user, workspace):
         Integration.objects.filter(workspace=workspace, kind__in=["openrouter", "openai_compatible"], enabled=True)
         .order_by("-config__exclusive", "id")
         .first()
-    )
+    ) if workspace.is_enterprise else None
     if own is not None:
         return Provider.from_integration(own)
     if not user.has_pro:
@@ -59,7 +59,8 @@ def clean(text: str) -> str:
     return "" if text.upper() == "NONE" else text
 
 
-def read_list(user, workspace, image: bytes, content_type: str, note: str = "") -> tuple[str, str]:
+def read_list(user, workspace, image: bytes, content_type: str, note: str = "", provider=None) -> tuple[str, str]:
+    """`provider` overrides the choice (team chats use the workspace's, paid by the Enterprise plan)."""
     from concierge.notify import local_today
     from tasks.models import TagGroup
 
@@ -74,7 +75,7 @@ def read_list(user, workspace, image: bytes, content_type: str, note: str = "") 
         note=f"- The user wrote this about the photo; follow it for dates, projects or priorities: {note.strip()[:300]!r}\n"
         if note.strip() else "",
     )
-    provider = provider_for(user, workspace)
+    provider = provider or provider_for(user, workspace)
     url = f"data:{content_type};base64,{base64.b64encode(image).decode()}"
     messages = [{"role": "user", "content": [
         {"type": "text", "text": prompt},

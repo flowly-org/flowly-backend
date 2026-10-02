@@ -55,11 +55,17 @@ def describe(task: Task, today: date) -> str:
 
 
 class Toolbox:
-    def __init__(self, user, provider, today: date, workspace_id=None):
+    #: Tools that only read: the ones people who aren't linked to Flowly may use in a team chat.
+    READ_ONLY = {"list_tasks", "list_workspaces"}
+
+    def __init__(self, user, provider, today: date, workspace_id=None, *, team_only=False, read_only=False):
         self.user, self.provider, self.today = user, provider, today
         self.hidden = hidden_workspace_ids(user, provider)
-        #: Workspace endpoints of the MCP server limit every tool to one workspace.
+        #: Workspace endpoints of the MCP server (and team chats) limit every tool to one workspace.
         self.only = workspace_id
+        #: Team chats: private tasks never show, whoever asks.
+        self.team_only = team_only
+        self.read_only = read_only
 
     # --- schema ---------------------------------------------------------------
 
@@ -126,6 +132,8 @@ class Toolbox:
             handler = getattr(self, f"tool_{name}", None)
             if handler is None:
                 return f"Unknown tool {name}."
+            if self.read_only and name not in self.READ_ONLY:
+                return "Error: only people who linked their Flowly account can change things here."
             return handler(**args)
         except (ValueError, TypeError) as exc:
             return f"Error: {exc}"
@@ -142,12 +150,10 @@ class Toolbox:
         from tasks.access import member_visible_q
 
         qs = Task.objects.filter(workspace_id=self.only) if self.only else Task.objects.all()
-        return (
-            qs.filter(workspace__memberships__user=self.user)
-            .filter(member_visible_q(self.user))
-            .exclude(workspace_id__in=self.hidden)
-            .select_related("workspace", "project", "status", "priority", "assignee")
-        )
+        qs = qs.filter(workspace__memberships__user=self.user).filter(member_visible_q(self.user))
+        if self.team_only:
+            qs = qs.exclude(visibility=Task.Visibility.PRIVATE)
+        return qs.exclude(workspace_id__in=self.hidden).select_related("workspace", "project", "status", "priority", "assignee")
 
     def _task(self, task_id) -> Task:
         task = self._tasks().filter(pk=int(task_id)).first()

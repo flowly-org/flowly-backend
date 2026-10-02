@@ -29,12 +29,13 @@ def bot_username() -> str:
     return _me_cache[token]
 
 
-def send_message(chat_id: int, text: str):
+def send_message(chat_id: int, text: str, reply_to: int | None = None):
     """Send plain text (escaped for Telegram's HTML mode), split into Telegram-sized chunks."""
     text = text.strip() or "…"
     for start in range(0, len(text), 3800):
+        extra = {"reply_parameters": {"message_id": reply_to, "allow_sending_without_reply": True}} if reply_to and not start else {}
         call("sendMessage", chat_id=chat_id, text=html.escape(text[start : start + 3800]), parse_mode="HTML",
-             disable_web_page_preview=True)
+             disable_web_page_preview=True, **extra)
 
 
 def download(file_id: str, max_bytes: int = 10 * 1024 * 1024) -> bytes:

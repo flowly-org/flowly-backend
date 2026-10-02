@@ -13,6 +13,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     member_count = serializers.IntegerField(read_only=True)
     time_tracking = serializers.BooleanField(required=False, default=True)
     billing_enabled = serializers.SerializerMethodField()
+    is_enterprise = serializers.BooleanField(read_only=True)
 
     def get_billing_enabled(self, obj):
         try:
@@ -22,8 +23,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Workspace
-        fields = ["id", "name", "color", "time_tracking", "billing_enabled", "created_at", "my_role", "member_count"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "color", "time_tracking", "billing_enabled", "plan", "is_enterprise", "plan_expires_at",
+                  "created_at", "my_role", "member_count"]
+        read_only_fields = ["id", "created_at", "plan", "plan_expires_at"]
 
     def get_my_role(self, obj):
         user = self.context["request"].user

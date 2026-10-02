@@ -57,6 +57,9 @@ class IntegrationSerializer(serializers.ModelSerializer):
         kind = attrs.get("kind") or (self.instance.kind if self.instance else None)
         if kind not in REGISTRY:
             raise serializers.ValidationError({"kind": "Unknown integration kind."})
+        workspace = self.context.get("workspace") or (self.instance.workspace if self.instance else None)
+        if self.instance is None and REGISTRY[kind].enterprise and not (workspace and workspace.is_enterprise):
+            raise serializers.ValidationError({"kind": "This integration needs the Enterprise plan for the workspace."})
         config = attrs.get("config", self.instance.config if self.instance else {}) or {}
         if not isinstance(config, dict):
             raise serializers.ValidationError({"config": "Must be an object."})

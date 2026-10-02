@@ -11,6 +11,8 @@ from django.utils import timezone
 from rest_framework import permissions, serializers, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+
+from workspaces.models import Workspace
 from rest_framework.views import APIView
 
 from integrations.http import send
@@ -309,3 +311,43 @@ class GitHubAppAdminView(StaffView):
         GitHubApp.objects.all().delete()
         github._tokens.clear()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminWorkspaceSerializer(serializers.ModelSerializer):
+    members = serializers.IntegerField(read_only=True)
+    owner = serializers.SerializerMethodField()
+    is_enterprise = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Workspace
+        fields = ["id", "name", "color", "plan", "plan_expires_at", "is_enterprise", "members", "owner", "created_at"]
+        read_only_fields = ["id", "name", "color", "created_at"]
+
+    def get_owner(self, obj):
+        m = obj.memberships.filter(role="owner").select_related("user").first()
+        return m.user.email if m else None
+
+
+class WorkspacesView(StaffView):
+    """Instance admins: workspaces and their plan (Enterprise unlocks team bots and own AI providers)."""
+
+    def queryset(self):
+        return Workspace.objects.annotate(members=Count("memberships", distinct=True)).order_by("name")
+
+    def get(self, request):
+        qs = self.queryset()
+        q = request.query_params.get("q", "").strip()
+        if q:
+            qs = qs.filter(Q(name__icontains=q) | Q(memberships__user__email__icontains=q)).distinct()
+        return Response(AdminWorkspaceSerializer(qs[:200], many=True).data)
+
+
+class WorkspaceDetailView(WorkspacesView):
+    def patch(self, request, pk):
+        ws = self.queryset().filter(pk=pk).first()
+        if ws is None:
+            return Response(status=status.HTTP_404_NOT_FOUND)
+        serializer = AdminWorkspaceSerializer(ws, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AdminWorkspaceSerializer(self.queryset().get(pk=pk)).data)
