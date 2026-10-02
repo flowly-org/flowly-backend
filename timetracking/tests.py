@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
+from django.test import TransactionTestCase
 from rest_framework.test import APITestCase
 
 from accounts.models import ApiToken, User
@@ -302,7 +303,7 @@ class FatturaPATests(APITestCase):
         inv2 = self.client.post(f"/api/workspaces/{other}/invoices/", {"period_start": day, "period_end": day}, format="json").data
         self.assertEqual(inv2["issuer_name"], "Marco Rossi")
         # Country without a format yet: explained, not crashed.
-        self.client.patch("/api/my/invoicing/", {"country": "DE"}, format="json")
+        self.client.patch("/api/my/invoicing/", {"country": "ES"}, format="json")
         check = self.client.get(f"/api/workspaces/{other}/invoices/{inv2['id']}/einvoice/?check=1").data
         self.assertEqual(check["format"], None)
         self.assertFalse(check["ok"])
@@ -317,3 +318,127 @@ class FatturaPATests(APITestCase):
         self.assertIn("Your Partita IVA (Settings → Invoicing).", check["missing"])
         self.assertIn("Your CAP must be 5 digits.", check["missing"])
         self.assertEqual(self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/").status_code, 400)
+
+
+class EN16931Tests(APITestCase):
+    """XRechnung (DE, UBL) and Factur-X (FR, CII). Set EINVOICE_DUMP=<dir> to keep the files for the official
+    validators (scripts/validate-einvoices.sh)."""
+
+    PROFILES = {
+        "DE": {"name": "Muster Software GmbH", "country": "DE", "vat_id": "DE123456789", "tax_code": "12/345/67890",
+               "address": "Friedrichstraße 10", "zip": "10117", "city": "Berlin", "iban": "DE89370400440532013000",
+               "email": "rechnung@muster.example", "phone": "+49 30 123456"},
+        "FR": {"name": "Atelier Dupont SARL", "country": "FR", "vat_id": "FR32123456789", "tax_code": "12345678900017",
+               "address": "12 rue de la Paix", "zip": "75002", "city": "Paris", "iban": "FR7630006000011234567890189",
+               "email": "factures@dupont.example", "phone": "+33 1 23 45 67 89"},
+    }
+    CLIENTS = {
+        "DE": {"client_name": "Kunde AG", "client_vat": "DE987654321", "client_address": "Marienplatz 1",
+               "client_zip": "80331", "client_city": "München", "client_country": "DE",
+               "client_email": "einkauf@kunde.example", "client_reference": "04011000-12345-67"},
+        "FR": {"client_name": "Client SAS", "client_vat": "FR40303265045", "client_tax_code": "303265045",
+               "client_address": "5 avenue Foch", "client_zip": "69006", "client_city": "Lyon", "client_country": "FR",
+               "client_email": "compta@client.example", "client_reference": "PO-2026-17"},
+    }
+
+    def setUp(self):
+        from pathlib import Path
+
+        from lxml import etree
+
+        base = Path(__file__).parent / "xsd"
+        self.ubl = etree.XMLSchema(etree.parse(str(base / "ubl" / "maindoc" / "UBL-Invoice-2.1.xsd")))
+        self.cii = etree.XMLSchema(etree.parse(str(base / "cii" / "CrossIndustryInvoice_100pD16B.xsd")))
+        auth = self.client.post("/api/auth/register/", {"email": "eu@example.com", "password": "s3cure-Passw0rd", "full_name": "EU"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        User.objects.filter(email="eu@example.com").update(plan="pro")
+
+    def make_invoice(self, country, tax_rate, zero_vat="E"):
+        fmt = {"DE": "xrechnung", "FR": "facturx"}[country]
+        self.client.patch("/api/my/invoicing/", {**self.PROFILES[country], "format_settings": {fmt: {"zero_vat": zero_vat}}}, format="json")
+        ws = self.client.post("/api/workspaces/", {"name": f"WS {country} {tax_rate} {zero_vat}"}).data["id"]
+        base = f"/api/workspaces/{ws}"
+        self.client.patch(f"{base}/billing/", {"enabled": True, "default_rate": "80.00", "tax_rate": str(tax_rate)}, format="json")
+        project = self.client.post(f"{base}/projects/", {"name": "Website"}).data
+        self.client.patch(f"{base}/billing/projects/{project['id']}/", {"mode": "inherit", **self.CLIENTS[country]}, format="json")
+        start = timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
+        for title, minutes in (("Design", 90), ("Entwicklung & Tests", 135)):
+            task = self.client.post(f"{base}/tasks/", {"title": title, "project": project["id"]}, format="json").data
+            self.client.post(f"{base}/time-entries/", {"task": task["id"], "started_at": start.isoformat(),
+                             "ended_at": (start + timedelta(minutes=minutes)).isoformat()}, format="json")
+        day = start.date().isoformat()
+        inv = self.client.post(f"{base}/invoices/", {"period_start": day, "period_end": day, "project": project["id"]}, format="json")
+        self.assertEqual(inv.status_code, 201, inv.data)
+        return f"{base}/invoices/{inv.data['id']}/einvoice/"
+
+    def fetch(self, url, schema, name):
+        import os
+
+        from lxml import etree
+
+        check = self.client.get(url + "?check=1").data
+        self.assertTrue(check["ok"], check)
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        doc = etree.fromstring(res.content)
+        self.assertTrue(schema.validate(doc), schema.error_log)
+        if os.environ.get("EINVOICE_DUMP"):
+            with open(os.path.join(os.environ["EINVOICE_DUMP"], name), "wb") as fh:
+                fh.write(res.content)
+        return check, doc
+
+    def test_xrechnung(self):
+        for rate, zero in (("19.00", "E"), ("0", "E"), ("0", "AE")):
+            url = self.make_invoice("DE", rate, zero)
+            check, doc = self.fetch(url, self.ubl, f"xrechnung-{rate}-{zero}.xml")
+            self.assertEqual(check["format"], "xrechnung")
+            ns = {"cbc": "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+                  "cac": "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"}
+            text = lambda p: doc.xpath(p, namespaces=ns)[0].text
+            self.assertEqual(text("//cbc:BuyerReference"), "04011000-12345-67")
+            self.assertEqual(text("//cac:TaxSubtotal/cac:TaxCategory/cbc:ID"), "S" if rate != "0" else zero)
+            # 1.5 h + 2.25 h at 80 € = 300 €
+            self.assertEqual(text("//cac:LegalMonetaryTotal/cbc:LineExtensionAmount"), "300.00")
+            self.assertEqual(text("//cac:LegalMonetaryTotal/cbc:PayableAmount"), "357.00" if rate != "0" else "300.00")
+
+    def test_facturx(self):
+        for rate, zero in (("20.00", "E"), ("0", "E"), ("0", "AE")):
+            url = self.make_invoice("FR", rate, zero)
+            check, doc = self.fetch(url, self.cii, f"facturx-{rate}-{zero}.xml")
+            self.assertEqual(check["format"], "facturx")
+            ns = {"ram": "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100"}
+            text = lambda p: doc.xpath(p, namespaces=ns)[0].text
+            self.assertEqual(text("//ram:SellerTradeParty/ram:SpecifiedLegalOrganization/ram:ID"), "123456789")
+            self.assertEqual(text("//ram:SellerTradeParty/ram:GlobalID"), "12345678900017")
+            self.assertEqual(len(doc.xpath("//ram:IncludedNote/ram:SubjectCode", namespaces=ns)), 3)
+            self.assertEqual(text("//ram:GrandTotalAmount"), "360.00" if rate != "0" else "300.00")
+
+    def test_missing_german_details(self):
+        url = self.make_invoice("DE", "19.00")
+        self.client.patch("/api/my/invoicing/", {"phone": "", "iban": ""}, format="json")
+        missing = self.client.get(url + "?check=1").data["missing"]
+        self.assertIn("Your phone number (Settings → Invoicing).", missing)
+        self.assertIn("Your IBAN (Settings → Invoicing).", missing)
+
+
+
+class InvoiceTransactionTests(TransactionTestCase):
+    """Runs without the per-test transaction, like production: invoice creation must open its own (select_for_update)."""
+
+    def test_create_invoice_outside_a_transaction(self):
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        auth = client.post("/api/auth/register/", {"email": "tx@example.com", "password": "s3cure-Passw0rd", "full_name": "Tx"}).data
+        client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        User.objects.filter(email="tx@example.com").update(plan="pro")
+        ws = client.get("/api/workspaces/").data[0]["id"]
+        base = f"/api/workspaces/{ws}"
+        client.patch(f"{base}/billing/", {"enabled": True, "default_rate": "10"}, format="json")
+        task = client.post(f"{base}/tasks/", {"title": "T"}, format="json").data
+        start = timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
+        client.post(f"{base}/time-entries/", {"task": task["id"], "started_at": start.isoformat(),
+                    "ended_at": (start + timedelta(hours=1)).isoformat()}, format="json")
+        day = start.date().isoformat()
+        res = client.post(f"{base}/invoices/", {"period_start": day, "period_end": day}, format="json")
+        self.assertEqual(res.status_code, 201, res.content[:300])

@@ -49,6 +49,7 @@ class InvoicingProfile(models.Model):
     province = models.CharField(max_length=40, blank=True, help_text="Province / region / state.")
     iban = models.CharField(max_length=34, blank=True)
     email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=40, blank=True)
     format_settings = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -80,6 +81,10 @@ class ProjectBilling(models.Model):
     #: Codice destinatario (7 characters; 0000000 when the invoice goes to a PEC address or to a private person).
     client_sdi_code = models.CharField(max_length=7, blank=True)
     client_pec = models.EmailField(blank=True)
+    #: Where the client receives e-invoices (EN 16931 electronic address, used by XRechnung / Factur-X).
+    client_email = models.EmailField(blank=True)
+    #: Buyer reference (BT-10): the client's order number or, for German public bodies, the Leitweg-ID.
+    client_reference = models.CharField(max_length=100, blank=True)
     budget_hours = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
 

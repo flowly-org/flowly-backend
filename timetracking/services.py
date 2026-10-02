@@ -104,7 +104,6 @@ def report(workspace, entries, group: str):
     return {"currency": billing.currency, "billing_enabled": billing.enabled, "rows": out, "totals": totals}
 
 
-@transaction.atomic
 def profile_details(profile) -> str:
     """Issuer block printed on invoices: the free text, or one built from the structured fields."""
     if profile.details.strip():
@@ -119,6 +118,7 @@ def profile_details(profile) -> str:
     return "\n".join(l for l in lines if l)
 
 
+@transaction.atomic
 def create_invoice(workspace, user, *, project, period_start: date, period_end: date, group_by="task"):
     billing = WorkspaceBilling.objects.select_for_update().get_or_create(workspace=workspace)[0]
     if not billing.enabled or not workspace.time_tracking:

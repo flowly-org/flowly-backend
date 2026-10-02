@@ -9,8 +9,9 @@ Adding a format: subclass Format in a module here, list it in FORMATS.
 
 from ..models import Invoice, InvoicingProfile, project_billing
 
-ISSUER_FIELDS = ["name", "details", "country", "vat_id", "tax_code", "address", "zip", "city", "province", "iban", "email"]
-CLIENT_FIELDS = ["vat_country", "vat", "tax_code", "address", "zip", "city", "province", "country", "sdi_code", "pec"]
+ISSUER_FIELDS = ["name", "details", "country", "vat_id", "tax_code", "address", "zip", "city", "province", "iban", "email", "phone"]
+CLIENT_FIELDS = ["vat_country", "vat", "tax_code", "address", "zip", "city", "province", "country", "sdi_code", "pec",
+                 "email", "reference"]
 
 
 class Format:
@@ -38,9 +39,11 @@ class Format:
         return {"key": self.key, "label": self.label, "countries": list(self.countries), "settings": self.settings}
 
 
+from .facturx import FacturX  # noqa: E402
 from .fatturapa import FatturaPA  # noqa: E402
+from .xrechnung import XRechnung  # noqa: E402
 
-FORMATS: dict[str, Format] = {f.key: f for f in (FatturaPA(),)}
+FORMATS: dict[str, Format] = {f.key: f for f in (FatturaPA(), XRechnung(), FacturX())}
 
 
 def format_for(country: str) -> Format | None:
