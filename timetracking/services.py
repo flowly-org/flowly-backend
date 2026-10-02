@@ -10,8 +10,8 @@ from tasks.access import member_visible_q
 from tasks.models import Task
 from workspaces.models import Workspace
 
-from . import fatturapa
-from .models import Invoice, InvoiceLine, ProjectBilling, TimeEntry, WorkspaceBilling, money, project_billing, rate_for, rounded_seconds
+from . import einvoice
+from .models import Invoice, InvoiceLine, InvoicingProfile, ProjectBilling, TimeEntry, WorkspaceBilling, money, project_billing, rate_for, rounded_seconds
 
 
 def ensure_tracking(project, workspace=None):
@@ -105,6 +105,20 @@ def report(workspace, entries, group: str):
 
 
 @transaction.atomic
+def profile_details(profile) -> str:
+    """Issuer block printed on invoices: the free text, or one built from the structured fields."""
+    if profile.details.strip():
+        return profile.details.strip()
+    lines = [profile.address, " ".join(filter(None, [profile.zip, profile.city, profile.province])).strip()]
+    if profile.vat_id:
+        lines.append(f"VAT {profile.country}{profile.vat_id}")
+    if profile.tax_code:
+        lines.append(f"Tax code {profile.tax_code}")
+    if profile.iban:
+        lines.append(f"IBAN {profile.iban}")
+    return "\n".join(l for l in lines if l)
+
+
 def create_invoice(workspace, user, *, project, period_start: date, period_end: date, group_by="task"):
     billing = WorkspaceBilling.objects.select_for_update().get_or_create(workspace=workspace)[0]
     if not billing.enabled or not workspace.time_tracking:
@@ -142,6 +156,7 @@ def create_invoice(workspace, user, *, project, period_start: date, period_end: 
         raise ValidationError({"detail": "No unbilled billable time in that period."})
 
     pb = project_billing(project)
+    profile = InvoicingProfile.for_user(user)
     number = f"{billing.invoice_prefix}{billing.next_invoice_number:04d}"
     billing.next_invoice_number += 1
     billing.save(update_fields=["next_invoice_number"])
@@ -150,10 +165,10 @@ def create_invoice(workspace, user, *, project, period_start: date, period_end: 
         workspace=workspace, project=project, number=number, issue_date=today,
         due_date=today + timedelta(days=billing.payment_terms_days),
         period_start=period_start, period_end=period_end, currency=billing.currency, tax_rate=billing.tax_rate,
-        issuer_name=billing.issuer_name, issuer_details=billing.issuer_details,
+        issuer_name=profile.name or user.full_name or user.email, issuer_details=profile_details(profile),
         client_name=(pb.client_name if pb else "") or (project.name if project else ""),
         client_details=pb.client_details if pb else "", notes=billing.invoice_notes, created_by=user,
-        einvoice=fatturapa.snapshot(billing, pb),
+        einvoice=einvoice.snapshot(user, pb),
     )
     for i, line in enumerate(lines.values()):
         # The amount is computed from the hours as printed, so every line adds up on paper.

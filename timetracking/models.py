@@ -23,30 +23,38 @@ class WorkspaceBilling(models.Model):
     invoice_prefix = models.CharField(max_length=20, default="INV-")
     next_invoice_number = models.PositiveIntegerField(default=1)
     payment_terms_days = models.PositiveSmallIntegerField(default=30)
-    issuer_name = models.CharField(max_length=200, blank=True)
-    issuer_details = models.TextField(blank=True, help_text="Address, VAT number, IBAN…")
     invoice_notes = models.TextField(blank=True)
-    # Italian e-invoicing (FatturaPA): the issuer ("cedente/prestatore").
-    issuer_vat = models.CharField("Partita IVA", max_length=28, blank=True, help_text="Without the country prefix.")
-    issuer_vat_country = models.CharField(max_length=2, default="IT")
-    issuer_tax_code = models.CharField("Codice fiscale", max_length=16, blank=True)
-    issuer_regime = models.CharField(
-        max_length=4, default="RF01", help_text="Regime fiscale: RF01 ordinario, RF19 forfettario, …"
-    )
-    issuer_address = models.CharField(max_length=60, blank=True)
-    issuer_zip = models.CharField(max_length=5, blank=True)
-    issuer_city = models.CharField(max_length=60, blank=True)
-    issuer_province = models.CharField(max_length=2, blank=True)
-    issuer_country = models.CharField(max_length=2, default="IT")
-    issuer_iban = models.CharField(max_length=34, blank=True)
-    #: Natura IVA for lines without VAT, e.g. N2.2 (forfettario), N4 (esenti).
-    vat_nature = models.CharField(max_length=5, default="N2.2")
-    #: Add the €2 virtual stamp duty on VAT-free invoices over €77.47 (bollo virtuale).
-    stamp_duty = models.BooleanField(default=False)
 
     @classmethod
     def for_workspace(cls, workspace):
         return cls.objects.get_or_create(workspace=workspace)[0]
+
+
+class InvoicingProfile(models.Model):
+    """Who issues the invoices: a person's (or their company's) invoicing identity, used in every workspace.
+
+    `country` decides the national e-invoice format (see timetracking.einvoice); format-specific settings live in
+    `format_settings`, e.g. {"fatturapa": {"regime": "RF19", "vat_nature": "N2.2", "stamp_duty": true}}.
+    """
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="invoicing")
+    name = models.CharField(max_length=200, blank=True, help_text="Business or full name on invoices.")
+    details = models.TextField(blank=True, help_text="Free text printed under the name (contacts, registration…).")
+    country = models.CharField(max_length=2, default="IT")
+    vat_id = models.CharField(max_length=28, blank=True, help_text="VAT number without the country prefix.")
+    tax_code = models.CharField(max_length=20, blank=True, help_text="National tax id (e.g. codice fiscale).")
+    address = models.CharField(max_length=120, blank=True)
+    zip = models.CharField(max_length=12, blank=True)
+    city = models.CharField(max_length=80, blank=True)
+    province = models.CharField(max_length=40, blank=True, help_text="Province / region / state.")
+    iban = models.CharField(max_length=34, blank=True)
+    email = models.EmailField(blank=True)
+    format_settings = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def for_user(cls, user):
+        return cls.objects.get_or_create(user=user)[0]
 
 
 class ProjectBilling(models.Model):

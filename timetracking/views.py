@@ -14,8 +14,8 @@ from workspaces.models import Workspace
 from workspaces.permissions import WorkspaceScopedMixin
 
 from . import services
-from .models import Invoice, ProjectBilling, TimeEntry, WorkspaceBilling, rate_for
-from .serializers import InvoiceSerializer, ProjectBillingSerializer, TimeEntrySerializer, WorkspaceBillingSerializer
+from .models import Invoice, InvoicingProfile, ProjectBilling, TimeEntry, WorkspaceBilling, rate_for
+from .serializers import InvoiceSerializer, InvoicingProfileSerializer, ProjectBillingSerializer, TimeEntrySerializer, WorkspaceBillingSerializer
 
 
 def parse_date(value, field):
@@ -197,12 +197,12 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         instance.delete()
 
     def perform_update(self, serializer):
-        from . import fatturapa
+        from . import einvoice
 
         was_draft = serializer.instance.status == Invoice.Status.DRAFT
         invoice = serializer.save()
         if was_draft and invoice.status != Invoice.Status.DRAFT:
-            invoice.einvoice = fatturapa.current(invoice)  # freeze the e-invoice data as sent
+            invoice.einvoice = einvoice.current(invoice)  # freeze the e-invoice data as sent
             invoice.save(update_fields=["einvoice"])
         if invoice.status == Invoice.Status.VOID:
             invoice.entries.update(invoice=None)  # voided time can be invoiced again
@@ -226,20 +226,23 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         return res
 
     @action(detail=True, methods=["get"])
-    def fatturapa(self, request, workspace_pk=None, pk=None):
-        """Italian e-invoice XML (FatturaPA FPR12). ?check=1 only lists what's missing."""
-        from . import fatturapa
+    def einvoice(self, request, workspace_pk=None, pk=None):
+        """National e-invoice file for the issuer's country (FatturaPA for Italy). ?check=1 lists what's missing."""
+        from . import einvoice
 
         invoice = self.get_object()
         if not request.user.has_pro:
             return Response({"detail": "E-invoices are part of Flowly Pro."}, status=status.HTTP_402_PAYMENT_REQUIRED)
-        missing = fatturapa.problems(invoice)
+        fmt, data, missing = einvoice.export(invoice)
         if request.query_params.get("check"):
-            return Response({"ok": not missing, "missing": missing, "filename": fatturapa.filename(invoice)})
+            return Response({
+                "ok": not missing, "missing": missing, "format": fmt.key if fmt else None,
+                "label": fmt.label if fmt else None, "filename": fmt.filename(invoice, data) if fmt else None,
+            })
         if missing:
             return Response({"detail": "Missing data for the e-invoice.", "missing": missing}, status=status.HTTP_400_BAD_REQUEST)
-        res = HttpResponse(fatturapa.build(invoice), content_type="application/xml")
-        res["Content-Disposition"] = f'attachment; filename="{fatturapa.filename(invoice)}"'
+        res = HttpResponse(fmt.build(invoice, data), content_type=fmt.content_type)
+        res["Content-Disposition"] = f'attachment; filename="{fmt.filename(invoice, data)}"'
         return res
 
     @action(detail=True, methods=["get"])
@@ -248,3 +251,25 @@ class InvoiceViewSet(WorkspaceScopedMixin, mixins.ListModelMixin, mixins.Retriev
         return Response(TimeEntrySerializer(invoice.entries.select_related("user", "task", "project"), many=True).data)
 
 
+
+
+class InvoicingProfileView(APIView):
+    """GET/PATCH /api/my/invoicing/: the user's invoicing identity, used on every invoice they issue."""
+
+    def get(self, request):
+        from . import einvoice
+
+        profile = InvoicingProfile.for_user(request.user)
+        fmt = einvoice.format_for(profile.country)
+        return Response({
+            "profile": InvoicingProfileSerializer(profile).data,
+            "format": fmt.key if fmt else None,
+            "formats": [f.describe() for f in einvoice.FORMATS.values()],
+        })
+
+    def patch(self, request):
+        profile = InvoicingProfile.for_user(request.user)
+        serializer = InvoicingProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return self.get(request)

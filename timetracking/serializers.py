@@ -4,7 +4,7 @@ from rest_framework import serializers
 from accounts.serializers import UserSerializer
 from tasks.models import Project
 
-from .models import Invoice, InvoiceLine, ProjectBilling, TimeEntry, WorkspaceBilling
+from .models import Invoice, InvoiceLine, InvoicingProfile, ProjectBilling, TimeEntry, WorkspaceBilling
 
 
 class TimeEntrySerializer(serializers.ModelSerializer):
@@ -81,6 +81,48 @@ class WorkspaceBillingSerializer(serializers.ModelSerializer):
         if value not in (0, 1, 5, 6, 10, 15, 30, 60):
             raise serializers.ValidationError("Choose 0, 1, 5, 6, 10, 15, 30 or 60.")
         return value
+
+
+class InvoicingProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InvoicingProfile
+        exclude = ["id", "user"]
+        read_only_fields = ["updated_at"]
+
+    def validate_country(self, value):
+        value = (value or "").upper()
+        if len(value) != 2 or not value.isalpha():
+            raise serializers.ValidationError("Use a 2-letter country code, e.g. IT.")
+        return value
+
+    def validate_iban(self, value):
+        return "".join(value.split()).upper()
+
+    def validate_format_settings(self, value):
+        from . import einvoice
+
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Must be an object.")
+        clean = {}
+        for key, settings in value.items():
+            fmt = einvoice.FORMATS.get(key)
+            if fmt is None or not isinstance(settings, dict):
+                continue
+            spec = {f["key"]: f for f in fmt.settings}
+            out = {}
+            for k, v in settings.items():
+                f = spec.get(k)
+                if f is None:
+                    continue
+                if f["type"] == "bool":
+                    v = bool(v)
+                elif f["type"] == "choice" and v not in [c[0] for c in f["choices"]]:
+                    raise serializers.ValidationError(f"{fmt.label}: invalid {f['label']}.")
+                out[k] = v
+            clean[key] = out
+        # Keep settings of other formats that weren't sent.
+        existing = self.instance.format_settings if self.instance else {}
+        return {**existing, **clean}
 
 
 class ProjectBillingSerializer(serializers.ModelSerializer):

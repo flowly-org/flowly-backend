@@ -187,11 +187,13 @@ class FatturaPATests(APITestCase):
         self.ws = self.client.post("/api/workspaces/", {"name": "Studio"}).data["id"]
         self.base = f"/api/workspaces/{self.ws}"
         self.project = self.client.post(f"{self.base}/projects/", {"name": "Sito ACME"}).data
-        self.client.patch(f"{self.base}/billing/", {
-            "enabled": True, "default_rate": "50.00", "tax_rate": "22.00", "issuer_name": "Marco Rossi",
-            "issuer_vat": "01234567890", "issuer_tax_code": "RSSMRC80A01A944X", "issuer_address": "Via Indipendenza 1",
-            "issuer_zip": "40121", "issuer_city": "Bologna", "issuer_province": "BO", "issuer_iban": "IT60 X054 2811 1010 0000 0123 456",
+        self.client.patch(f"{self.base}/billing/", {"enabled": True, "default_rate": "50.00", "tax_rate": "22.00"}, format="json")
+        res = self.client.patch("/api/my/invoicing/", {
+            "name": "Marco Rossi", "country": "it", "vat_id": "01234567890", "tax_code": "RSSMRC80A01A944X",
+            "address": "Via Indipendenza 1", "zip": "40121", "city": "Bologna", "province": "BO",
+            "iban": "IT60 X054 2811 1010 0000 0123 456",
         }, format="json")
+        self.assertEqual(res.data["format"], "fatturapa")
         self.client.patch(f"{self.base}/billing/projects/{self.project['id']}/", {
             "mode": "inherit", "client_name": "ACME S.r.l.", "client_vat": "09876543210", "client_address": "Corso Como 10",
             "client_zip": "20154", "client_city": "Milano", "client_province": "MI", "client_sdi_code": "M5UXCR1",
@@ -225,10 +227,10 @@ class FatturaPATests(APITestCase):
         self.user.plan = "pro"
         self.user.save()
         inv = self.invoice()
-        check = self.client.get(f"{self.base}/invoices/{inv['id']}/fatturapa/?check=1").data
+        check = self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/?check=1").data
         self.assertTrue(check["ok"], check)
         self.assertTrue(check["filename"].startswith("IT01234567890_"))
-        res = self.client.get(f"{self.base}/invoices/{inv['id']}/fatturapa/")
+        res = self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/")
         self.assertEqual(res["Content-Type"], "application/xml")
         doc = self.validate(res.content)
         ns = {"p": "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"}
@@ -243,15 +245,19 @@ class FatturaPATests(APITestCase):
     def test_flat_rate_regime_with_stamp_duty_and_pec(self):
         self.user.plan = "pro"
         self.user.save()
-        self.client.patch(f"{self.base}/billing/", {"tax_rate": "0", "issuer_regime": "RF19", "stamp_duty": True,
-                                                     "vat_nature": "N2.2", "default_rate": "60.00"}, format="json")
+        self.client.patch(f"{self.base}/billing/", {"tax_rate": "0", "default_rate": "60.00"}, format="json")
+        res = self.client.patch("/api/my/invoicing/", {"format_settings": {"fatturapa": {
+            "regime": "RF19", "stamp_duty": True, "vat_nature": "N2.2", "unknown": 1}}}, format="json")
+        self.assertEqual(res.data["profile"]["format_settings"], {"fatturapa": {"regime": "RF19", "stamp_duty": True, "vat_nature": "N2.2"}})
+        bad = self.client.patch("/api/my/invoicing/", {"format_settings": {"fatturapa": {"regime": "RF99"}}}, format="json")
+        self.assertEqual(bad.status_code, 400)
         self.client.patch(f"{self.base}/billing/projects/{self.project['id']}/", {
             "mode": "inherit", "client_name": "Mario Bianchi", "client_vat": "", "client_tax_code": "BNCMRA70A01F205Z",
             "client_address": "Via Roma 2", "client_zip": "20121", "client_city": "Milano", "client_sdi_code": "",
             "client_pec": "mario@pec.it",
         }, format="json")
         inv = self.invoice()
-        doc = self.validate(self.client.get(f"{self.base}/invoices/{inv['id']}/fatturapa/").content)
+        doc = self.validate(self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/").content)
         ns = {"p": "http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2"}
         text = lambda path: doc.xpath(path, namespaces=ns)[0].text
         self.assertEqual(text("//CodiceDestinatario"), "0000000")
@@ -266,7 +272,7 @@ class FatturaPATests(APITestCase):
         self.user.save()
         self.client.patch(f"{self.base}/billing/projects/{self.project['id']}/", {"client_city": ""}, format="json")
         inv = self.invoice()
-        url = f"{self.base}/invoices/{inv['id']}/fatturapa/"
+        url = f"{self.base}/invoices/{inv['id']}/einvoice/"
         self.assertFalse(self.client.get(url + "?check=1").data["ok"])
         self.client.patch(f"{self.base}/billing/projects/{self.project['id']}/", {"client_city": "Milano"}, format="json")
         self.assertTrue(self.client.get(url + "?check=1").data["ok"])  # the draft picked it up
@@ -278,13 +284,36 @@ class FatturaPATests(APITestCase):
         self.assertIn(b"<Comune>Milano</Comune>", xml)
         self.assertIn("ACME Italia S.p.A.".encode(), xml)
 
+    def test_issuer_details_belong_to_the_user_in_every_workspace(self):
+        self.user.plan = "pro"
+        self.user.save()
+        inv = self.invoice()
+        self.assertEqual(inv["issuer_name"], "Marco Rossi")
+        self.assertIn("IBAN IT60X0542811101000000123456", inv["issuer_details"])
+        # A second workspace uses the same details, with no billing set-up for the issuer.
+        other = self.client.post("/api/workspaces/", {"name": "Altro"}).data["id"]
+        self.client.patch(f"/api/workspaces/{other}/billing/", {"enabled": True, "default_rate": "40"}, format="json")
+        project = self.client.post(f"/api/workspaces/{other}/projects/", {"name": "P"}).data
+        task = self.client.post(f"/api/workspaces/{other}/tasks/", {"title": "T", "project": project["id"]}, format="json").data
+        start = timezone.now().replace(hour=9, minute=0, second=0, microsecond=0)
+        self.client.post(f"/api/workspaces/{other}/time-entries/", {"task": task["id"], "started_at": start.isoformat(),
+                         "ended_at": (start + timedelta(hours=1)).isoformat()}, format="json")
+        day = start.date().isoformat()
+        inv2 = self.client.post(f"/api/workspaces/{other}/invoices/", {"period_start": day, "period_end": day}, format="json").data
+        self.assertEqual(inv2["issuer_name"], "Marco Rossi")
+        # Country without a format yet: explained, not crashed.
+        self.client.patch("/api/my/invoicing/", {"country": "DE"}, format="json")
+        check = self.client.get(f"/api/workspaces/{other}/invoices/{inv2['id']}/einvoice/?check=1").data
+        self.assertEqual(check["format"], None)
+        self.assertFalse(check["ok"])
+
     def test_missing_data_is_listed(self):
         self.user.plan = "pro"
         self.user.save()
-        self.client.patch(f"{self.base}/billing/", {"issuer_vat": "", "issuer_zip": "4012"}, format="json")
+        self.client.patch("/api/my/invoicing/", {"vat_id": "", "zip": "4012"}, format="json")
         inv = self.invoice()
-        check = self.client.get(f"{self.base}/invoices/{inv['id']}/fatturapa/?check=1").data
+        check = self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/?check=1").data
         self.assertFalse(check["ok"])
-        self.assertIn("Issuer Partita IVA (billing settings).", check["missing"])
-        self.assertIn("Issuer CAP must be 5 digits.", check["missing"])
-        self.assertEqual(self.client.get(f"{self.base}/invoices/{inv['id']}/fatturapa/").status_code, 400)
+        self.assertIn("Your Partita IVA (Settings → Invoicing).", check["missing"])
+        self.assertIn("Your CAP must be 5 digits.", check["missing"])
+        self.assertEqual(self.client.get(f"{self.base}/invoices/{inv['id']}/einvoice/").status_code, 400)
