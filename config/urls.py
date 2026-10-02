@@ -14,6 +14,7 @@ from tasks.views import MyContextView, MyTaskListView
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/auth/", include("accounts.urls")),
+    path("api/", include("payments.urls")),
     path("api/admin/", include("instance.urls")),
     path("api/mcp/", McpView.as_view(), name="mcp"),
     path("api/mcp", McpView.as_view()),

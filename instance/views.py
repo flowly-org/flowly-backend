@@ -157,9 +157,14 @@ class AdminUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "plan", "plan_expires_at", "is_staff", "is_active",
+        fields = ["id", "email", "full_name", "plan", "plan_expires_at", "plan_source", "is_staff", "is_active",
                   "date_joined", "last_login", "workspaces", "tokens_30d"]
-        read_only_fields = ["id", "email", "full_name", "date_joined", "last_login"]
+        read_only_fields = ["id", "email", "full_name", "date_joined", "last_login", "plan_source"]
+
+    def update(self, instance, validated_data):
+        if "plan" in validated_data or "plan_expires_at" in validated_data:
+            validated_data["plan_source"] = "manual"
+        return super().update(instance, validated_data)
 
 
 class UsersView(StaffView):
@@ -317,11 +322,24 @@ class AdminWorkspaceSerializer(serializers.ModelSerializer):
     members = serializers.IntegerField(read_only=True)
     owner = serializers.SerializerMethodField()
     is_enterprise = serializers.BooleanField(read_only=True)
+    subscription = serializers.SerializerMethodField()
+
+    def get_subscription(self, obj):
+        from payments.models import Subscription
+        from payments.views import sub_data
+
+        return sub_data(Subscription.objects.filter(customer__workspace=obj, kind="enterprise").order_by("-updated_at").first())
+
+    def update(self, instance, validated_data):
+        if "plan" in validated_data or "plan_expires_at" in validated_data:
+            validated_data["plan_source"] = "manual"  # an admin's choice overrides Stripe until the next Stripe event
+        return super().update(instance, validated_data)
 
     class Meta:
         model = Workspace
-        fields = ["id", "name", "color", "plan", "plan_expires_at", "is_enterprise", "members", "owner", "created_at"]
-        read_only_fields = ["id", "name", "color", "created_at"]
+        fields = ["id", "name", "color", "plan", "plan_expires_at", "plan_source", "is_enterprise", "members", "owner",
+                  "subscription", "created_at"]
+        read_only_fields = ["id", "name", "color", "created_at", "plan_source"]
 
     def get_owner(self, obj):
         m = obj.memberships.filter(role="owner").select_related("user").first()

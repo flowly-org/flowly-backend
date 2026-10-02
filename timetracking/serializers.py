@@ -84,10 +84,28 @@ class WorkspaceBillingSerializer(serializers.ModelSerializer):
 
 
 class InvoicingProfileSerializer(serializers.ModelSerializer):
+    #: Write-only: the user's Stripe key for pay links ("" disconnects). Never returned.
+    stripe_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    stripe_connected = serializers.SerializerMethodField()
+
     class Meta:
         model = InvoicingProfile
         exclude = ["id", "user"]
-        read_only_fields = ["updated_at"]
+        read_only_fields = ["updated_at", "stripe_account"]
+
+    def get_stripe_connected(self, obj):
+        return bool(obj.stripe_key)
+
+    def update(self, instance, validated_data):
+        if "stripe_key" in validated_data:
+            from payments.services import connect_key
+            from payments.stripe_api import StripeError
+
+            try:
+                connect_key(instance, validated_data.pop("stripe_key"))
+            except (ValueError, StripeError) as exc:
+                raise serializers.ValidationError({"stripe_key": str(exc)}) from exc
+        return super().update(instance, validated_data)
 
     def validate_country(self, value):
         value = (value or "").upper()
@@ -139,6 +157,15 @@ class InvoiceLineSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializer(serializers.ModelSerializer):
     lines = InvoiceLineSerializer(many=True, read_only=True)
+    payment = serializers.SerializerMethodField()
+
+    def get_payment(self, obj):
+        try:
+            p = obj.payment
+        except Exception:
+            p = None
+        return {"url": p.url, "paid_at": p.paid_at} if p else None
+
     project_name = serializers.CharField(source="project.name", read_only=True, default=None)
     entry_count = serializers.SerializerMethodField()
 

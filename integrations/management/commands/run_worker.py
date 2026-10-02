@@ -6,6 +6,7 @@ from django.db import close_old_connections
 
 from calendars.sync import tick as calendar_tick
 from concierge.jobs import tick as concierge_tick
+from payments.services import tick as payments_tick
 from integrations.worker import process_due
 
 
@@ -31,6 +32,7 @@ class Command(BaseCommand):
             done = process_due()
             concierge_tick()
             calendar_tick()
+            payments_tick()
             if once:
                 break
             if not done:

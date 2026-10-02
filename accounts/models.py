@@ -36,6 +36,8 @@ class User(AbstractUser):
 
     plan = models.CharField(max_length=10, choices=Plan.choices, default=Plan.FREE)
     plan_expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry.")
+    #: "stripe" while a Stripe subscription drives the plan; "manual" when an admin set it.
+    plan_source = models.CharField(max_length=10, default="manual")
     #: UI language (en, it, es, fr, de, pt); also used for default names in new workspaces.
     language = models.CharField(max_length=5, default="en")
     #: Service identity behind a workspace MCP token (not a person; can't sign in).

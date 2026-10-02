@@ -50,6 +50,9 @@ class InvoicingProfile(models.Model):
     iban = models.CharField(max_length=34, blank=True)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=40, blank=True)
+    #: The user's own Stripe secret or restricted key (encrypted), for "Pay online" links on their invoices.
+    stripe_key = models.TextField(blank=True)
+    stripe_account = models.CharField(max_length=120, blank=True)
     format_settings = models.JSONField(default=dict, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 

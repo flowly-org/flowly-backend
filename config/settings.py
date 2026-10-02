@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "mcpauth",
     "timetracking",
     "calendars",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -158,6 +159,13 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 SLACK_CLIENT_ID = os.environ.get("SLACK_CLIENT_ID", "")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_PRICE_PRO_MONTH = os.environ.get("STRIPE_PRICE_PRO_MONTH", "")
+STRIPE_PRICE_PRO_YEAR = os.environ.get("STRIPE_PRICE_PRO_YEAR", "")
+STRIPE_PRODUCT_ENTERPRISE = os.environ.get("STRIPE_PRODUCT_ENTERPRISE", "")
+STRIPE_PORTAL_CONFIG = os.environ.get("STRIPE_PORTAL_CONFIG", "")
+STRIPE_AUTOMATIC_TAX = os.environ.get("STRIPE_AUTOMATIC_TAX", "1") == "1"
 SLACK_CLIENT_SECRET = os.environ.get("SLACK_CLIENT_SECRET", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")

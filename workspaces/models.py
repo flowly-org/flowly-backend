@@ -22,6 +22,7 @@ class Workspace(models.Model):
     #: Enterprise: team bots (Telegram groups, Slack) and the workspace's own AI provider. Set by instance admins.
     plan = models.CharField(max_length=12, choices=Plan.choices, default=Plan.STANDARD)
     plan_expires_at = models.DateTimeField(null=True, blank=True, help_text="Empty = no expiry.")
+    plan_source = models.CharField(max_length=10, default="manual")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
