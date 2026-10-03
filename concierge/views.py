@@ -12,6 +12,7 @@ from instance import conf
 from . import brain, telegram
 from .bot import handle_update
 from .i18n import LANGUAGES
+from .personality import PERSONALITIES, choices as personality_choices
 from .models import AIUsage, Notification
 
 
@@ -55,6 +56,9 @@ class ConciergeSettingsSerializer(serializers.Serializer):
     morning_brief = serializers.BooleanField(required=False)
     alerts = serializers.BooleanField(required=False)
     provider = serializers.IntegerField(required=False, allow_null=True)
+    personality = serializers.ChoiceField(required=False, choices=list(PERSONALITIES))
+    learn = serializers.BooleanField(required=False)
+    memory = serializers.CharField(required=False, allow_blank=True, max_length=4000)
 
     def validate_timezone(self, value):
         from zoneinfo import ZoneInfo
@@ -106,7 +110,11 @@ class ConciergeView(APIView):
                     "morning_brief": profile.morning_brief,
                     "alerts": profile.alerts,
                     "provider": profile.provider_id,
+                    "personality": profile.personality,
+                    "learn": profile.learn,
                 },
+                "personalities": personality_choices(),
+                "memory_updated_at": profile.memory_updated_at,
                 "providers": [
                     {"id": i.id, "name": i.name, "workspace": i.workspace.name, "kind": i.kind, "model": i.config.get("model")}
                     for i in provider_choices(user)

@@ -66,9 +66,16 @@ def language_rule(user) -> str:
 
 
 def system_prompt(user, now: datetime) -> str:
+    from .personality import habits, prompt_for
+
     profile = profile_for(user)
     name = user.full_name or user.email.split("@")[0]
     memory = profile.memory.strip() or "(nothing yet)"
+    try:
+        observed = habits(user)
+    except Exception:
+        log.exception("Habits failed for %s", user.pk)
+        observed = ""
     return (
         f"You are {profile.name or 'Flo'}, Flowly's concierge and the personal assistant of {name}. Flowly is a task "
         "planner where each day's tasks are grouped by project or tags across several workspaces.\n"
@@ -76,9 +83,13 @@ def system_prompt(user, now: datetime) -> str:
         f"Now: {now:%A %d %B %Y, %H:%M} ({profile.timezone}). Today's date is {now.date().isoformat()}.\n"
         "Use the tools to look up and change tasks; never invent tasks or ids. When you change something, say what you "
         "changed. Calendar events (list_events) are background, not tasks; when one needs preparation, offer to create "
-        "a task with create_event_task, and record answers about events with mark_event. Keep replies short and friendly, as plain text for a chat app: short lines, '•' bullets, no markdown "
-        "headings or tables. If something is ambiguous, ask one brief question.\n"
-        f"What you remember about {name}:\n{memory}"
+        "a task with create_event_task, and record answers about events with mark_event. Write plain text for a chat app: "
+        "short lines, '•' bullets, no markdown headings or tables. If something is ambiguous, ask one brief question.\n"
+        f"VOICE: {prompt_for(profile)} Every reply, including briefs, must clearly sound like this personality: wording, "
+        "greeting (or none), tone and length. Earlier messages may have used another voice; ignore their style.\n"
+        f"What you remember about {name} (adapt to it; save lasting preferences with remember, drop wrong ones with "
+        f"forget):\n{memory}"
+        + (f"\nWhat their activity shows:\n{observed}" if observed else "")
     )
 
 

@@ -19,8 +19,13 @@ class ConciergeProfile(models.Model):
     morning_brief = models.BooleanField(default=True)
     alerts = models.BooleanField(default=True, help_text="Send urgent changes to Telegram.")
     last_brief_on = models.DateField(null=True, blank=True)
-    #: Long-term notes the assistant keeps about the user ("remember that…").
+    #: How it talks: a key of concierge.personality.PERSONALITIES.
+    personality = models.CharField(max_length=20, default="friendly")
+    #: Long-term notes the assistant keeps about the user ("remember that…", and what it learns).
     memory = models.TextField(blank=True)
+    #: Let it distil lasting preferences from conversations into `memory` (once a day).
+    learn = models.BooleanField(default=True)
+    memory_updated_at = models.DateTimeField(null=True, blank=True)
     #: Workspace AI provider to use instead of the platform key (must be in a workspace the user belongs to).
     provider = models.ForeignKey(
         "integrations.Integration", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"

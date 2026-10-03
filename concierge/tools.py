@@ -123,6 +123,8 @@ class Toolbox:
          "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
         {"name": "remember", "description": "Save a lasting note about the user's preferences or context.",
          "parameters": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string"}}}},
+        {"name": "forget", "description": "Remove remembered notes that contain these words (when the user says they're wrong or outdated).",
+         "parameters": {"type": "object", "required": ["words"], "properties": {"words": {"type": "string"}}}},
     ]
 
     @classmethod
@@ -365,7 +367,25 @@ class Toolbox:
         return f"Delegated #{task.id} “{task.title}” (delegation {d.id}; {used['used']}/{used['limit']} this month). I'll report on the task when done."
 
     def tool_remember(self, note):
+        from .personality import MEMORY_LIMIT, notes
+
         profile = self.user.concierge
-        profile.memory = (profile.memory + "\n- " + note.strip()).strip()[-4000:]
+        items = notes(profile.memory)
+        note = note.strip()
+        if note and note.lower() not in (n.lower() for n in items):
+            items.append(note)
+        profile.memory = "\n".join(f"- {n}" for n in items)[-MEMORY_LIMIT:]
         profile.save(update_fields=["memory"])
         return "Noted."
+
+    def tool_forget(self, words):
+        from .personality import notes
+
+        profile = self.user.concierge
+        items = notes(profile.memory)
+        keep = [n for n in items if words.lower().strip() not in n.lower()]
+        if len(keep) == len(items):
+            return "Nothing matched in memory."
+        profile.memory = "\n".join(f"- {n}" for n in keep)
+        profile.save(update_fields=["memory"])
+        return f"Forgot {len(items) - len(keep)} note(s)."

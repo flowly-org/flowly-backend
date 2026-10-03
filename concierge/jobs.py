@@ -15,7 +15,7 @@ _last_brief_check = 0.0
 
 
 def tick():
-    for job in (team_jobs, team_briefs):
+    for job in (team_jobs, team_briefs, reflections):
         try:
             job()
         except Exception:
@@ -113,3 +113,18 @@ def team_briefs():
                 SlackBot.api(integration, "chat.postMessage", channel=integration.config["channel"], text=text)
         except DeliveryError as exc:
             log.warning("Team brief for integration %s failed: %s", integration.pk, exc)
+
+
+_last_reflection_check = 0.0
+
+
+def reflections():
+    """Once a day per person (with new chats): distil lasting preferences into the memory."""
+    global _last_reflection_check
+    if time.monotonic() - _last_reflection_check < 600:
+        return
+    _last_reflection_check = time.monotonic()
+    from .personality import due_reflections, reflect
+
+    for profile in due_reflections():
+        reflect(profile)

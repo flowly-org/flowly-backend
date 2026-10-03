@@ -658,3 +658,60 @@ class TeamChatTests(APITestCase):
         with mock.patch("integrations.http.requests.request", request):
             channels = self.client.get(f"/api/workspaces/{self.ws}/integrations/{integration.id}/slack-channels/").data
         self.assertEqual(channels, [{"id": "C123456", "name": "cucina"}])
+
+
+@override_settings(OPENROUTER_API_KEY="or-key", OPENROUTER_MODEL="test/model")
+class PersonalityMemoryTests(APITestCase):
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "pm@example.com", "password": "s3cure-Passw0rd", "full_name": "Pia"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="pm@example.com")
+        self.user.plan = "pro"
+        self.user.save()
+        self.ws = self.client.get("/api/workspaces/").data[0]["id"]
+
+    def test_settings_prompt_and_tools(self):
+        from concierge import brain
+
+        data = self.client.get("/api/concierge/").data
+        self.assertEqual(data["settings"]["personality"], "friendly")
+        self.assertEqual([p["key"] for p in data["personalities"]], ["friendly", "coach", "butler", "minimal", "buddy", "calm"])
+        res = self.client.patch("/api/concierge/", {"personality": "coach", "memory": "- Deep work before 11\n- Calls Studio “work”", "learn": False}, format="json")
+        self.assertEqual((res.data["settings"]["personality"], res.data["settings"]["learn"]), ("coach", False))
+        self.assertEqual(self.client.patch("/api/concierge/", {"personality": "pirate"}, format="json").status_code, 400)
+        # Habits from activity: enough tasks in one workspace.
+        for i in range(6):
+            self.client.post(f"/api/workspaces/{self.ws}/tasks/", {"title": f"T{i}"}, format="json")
+        prompt = brain.system_prompt(self.user, brain.local_now(self.user))
+        self.assertIn("productivity coach", prompt)
+        self.assertIn("Deep work before 11", prompt)
+        self.assertIn("adds most tasks to", prompt)
+
+        world = FakeWorld(llm_replies=[tool_call("remember", {"note": "Deep work before 11"}),
+                                       tool_call("remember", {"note": "Prefers short briefs"}, "c2"),
+                                       tool_call("forget", {"words": "work”"}, "c3"), {"role": "assistant", "content": "Ok."}])
+        with mock.patch("integrations.http.requests.request", world):
+            brain.reply(self.user, "remember I like short briefs; and I don't call Studio work anymore")
+        self.user.concierge.refresh_from_db()
+        self.assertEqual(self.user.concierge.memory, "- Deep work before 11\n- Prefers short briefs")
+
+    def test_daily_reflection(self):
+        from concierge.models import ConciergeMessage, ConciergeProfile
+        from concierge.personality import due_reflections, reflect
+
+        profile = ConciergeProfile.objects.create(user=self.user, memory="- Likes mornings")
+        for text in ("I'm off on Fridays", "please keep the brief to 3 lines", "Marta is my business partner"):
+            ConciergeMessage.objects.create(user=self.user, role="user", content=text)
+        self.assertEqual([p.pk for p in due_reflections()], [profile.pk])
+        world = FakeWorld(llm_replies=[{"role": "assistant", "content": '{"memory": ["Likes mornings", "Off on Fridays", "Wants 3-line briefs", "Marta is their business partner"]}'}])
+        with mock.patch("integrations.http.requests.request", world):
+            self.assertTrue(reflect(profile))
+        profile.refresh_from_db()
+        self.assertEqual(profile.memory.count("\n- "), 3)
+        self.assertIn("Off on Fridays", profile.memory)
+        self.assertIn("Never store sensitive data", world.llm_calls[0]["json"]["messages"][0]["content"])
+        self.assertEqual(due_reflections(), [])  # done for today
+        profile.learn = False
+        profile.memory_updated_at = None
+        profile.save()
+        self.assertEqual(due_reflections(), [])  # learning switched off
