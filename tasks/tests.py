@@ -278,3 +278,36 @@ class CrossWorkspaceTests(ApiTestCase):
         self.assertEqual([p["name"] for p in ctx[1]["projects"]], ["Site"])
         self.assertEqual({g["kind"] for g in ctx[1]["tag_groups"]}, {"status", "priority"})
         self.assertEqual(ctx[1]["members"][0]["user"]["email"], "alice@example.com")
+
+
+
+class QuickAddTests(APITestCase):
+    def test_single_line_list_workspace_and_day(self):
+        from datetime import timedelta
+
+        from concierge.notify import local_today
+
+        auth = self.client.post("/api/auth/register/", {"email": "qa@example.com", "password": "s3cure-Passw0rd", "full_name": "Q"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        personal = self.client.get("/api/workspaces/").data[0]
+        other = self.client.post("/api/workspaces/", {"name": "Studio"}).data
+        res = self.client.post("/api/my/tasks/quick/", {"text": "Call the plumber !high"}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["workspace"]["id"], personal["id"])
+        self.assertEqual(res.data["created"][0]["title"], "Call the plumber")
+        from accounts.models import User
+        from tasks.models import Task
+
+        user = User.objects.get(email="qa@example.com")
+        task = Task.objects.get(title="Call the plumber")
+        self.assertEqual((task.assignee, task.priority.name, task.planned_date), (user, "High", local_today(user)))
+        res = self.client.post("/api/my/tasks/quick/", {"workspace": other["id"], "day": "tomorrow",
+                               "text": "- Draft offer\n  for ACME\n- [x] Send invoice\n- Plan Q4 @backlog"}, format="json")
+        titles = {t["title"]: t for t in res.data["created"]}
+        self.assertEqual(set(titles), {"Draft offer", "Send invoice", "Plan Q4"})
+        self.assertEqual(str(titles["Draft offer"]["planned_date"]), str(local_today(user) + timedelta(days=1)))
+        self.assertIsNone(titles["Plan Q4"]["planned_date"])
+        self.assertTrue(titles["Send invoice"]["done"])
+        self.assertEqual(Task.objects.get(title="Draft offer").description, "for ACME")
+        self.assertEqual(self.client.post("/api/my/tasks/quick/", {"text": "  "}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/my/tasks/quick/", {"text": "x", "workspace": 999999}, format="json").status_code, 404)

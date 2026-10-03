@@ -4,6 +4,7 @@ from django.db import transaction
 from rest_framework import generics, serializers, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from concierge import notify
 from integrations.events import emit, has_outgoing, snapshot
@@ -192,3 +193,40 @@ class MyContextView(generics.GenericAPIView):
                 }
             )
         return Response(result)
+
+
+
+class QuickAddView(APIView):
+    """POST {"text", "workspace"?, "day"?: "today"|"tomorrow"|"backlog"|YYYY-MM-DD}: one task or a whole list in the
+    bulk-add format (bullets, [x], indented notes, !priority #tag +Project @date). Used by the desktop and mobile apps.
+    The tasks are assigned to you; without a workspace they go to Personal (or your first workspace)."""
+
+    def post(self, request):
+        from concierge.notify import local_today
+        from concierge.tools import parse_day
+        from workspaces.models import Workspace
+
+        from .bulk import create_from_text
+
+        text = (request.data.get("text") or "").strip()
+        if not text:
+            return Response({"detail": "Write at least one task."}, status=400)
+        if len(text) > 20000:
+            return Response({"detail": "That list is too long."}, status=400)
+        mine = Workspace.objects.filter(memberships__user=request.user)
+        ws_id = request.data.get("workspace")
+        workspace = (mine.filter(pk=ws_id).first() if ws_id else None) or (
+            None if ws_id else (mine.filter(name__iexact="Personal").first() or mine.order_by("id").first()))
+        if workspace is None:
+            return Response({"detail": "Workspace not found."}, status=404)
+        today = local_today(request.user)
+        day = (request.data.get("day") or "today").strip().lower()
+        default = parse_day(day, today) if day else today
+        tasks = create_from_text(request.user, workspace, text, today, default_date=default)
+        if not tasks:
+            return Response({"detail": "No tasks found in that text."}, status=400)
+        return Response({
+            "workspace": {"id": workspace.id, "name": workspace.name},
+            "created": [{"id": t.id, "ref": t.ref, "title": t.title, "planned_date": t.planned_date, "done": t.status.is_done}
+                        for t in tasks],
+        }, status=201)
