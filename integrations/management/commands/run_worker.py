@@ -10,6 +10,7 @@ from payments.services import tick as payments_tick
 from delegation.engine import process as delegation_process
 from integrations.worker import process_due
 from wiki.sync import tick as wiki_tick
+from donetick.engine import tick as donetick_tick
 
 
 class Command(BaseCommand):
@@ -36,6 +37,7 @@ class Command(BaseCommand):
             calendar_tick()
             payments_tick()
             wiki_tick()
+            done += donetick_tick()
             done += delegation_process()
             if once:
                 break

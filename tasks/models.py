@@ -169,6 +169,7 @@ class Comment(models.Model):
         FLOWLY = "flowly", "Flowly"
         GITHUB = "github", "GitHub"
         AI = "ai", "AI delegation"
+        DONETICK = "donetick", "Donetick"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(

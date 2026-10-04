@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "payments",
     "delegation",
     "wiki",
+    "donetick",
 ]
 
 MIDDLEWARE = [
