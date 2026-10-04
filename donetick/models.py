@@ -20,7 +20,7 @@ def new_hook_token():
 class DonetickAccount(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="donetick_accounts")
     name = models.CharField(max_length=80, default="Donetick")
-    base_url = models.URLField(max_length=300)
+    base_url = models.CharField(max_length=300)
     #: Encrypted eAPI access token.
     token = models.TextField(blank=True)
     hook_token = models.CharField(max_length=40, unique=True, default=new_hook_token)
