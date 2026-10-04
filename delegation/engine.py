@@ -26,7 +26,7 @@ AUTHOR = "Flo (AI)"
 
 TRIAGE_PROMPT = """You decide whether an AI agent can do a task from someone's to-do list.
 The agent can: search the web and read pages, read the task's attachments, write texts and documents (drafts,
-summaries, plans, comparisons, checklists), and add subtasks for the person. It cannot: make calls, send emails or
+summaries, plans, comparisons, checklists), read the team wiki if one is linked, and add subtasks for the person. It cannot: make calls, send emails or
 messages, buy or book anything, sign in anywhere, be somewhere physically, or decide on the person's behalf.
 
 Answer with JSON only: {"verdict": "full" | "partial" | "no", "plan": "...", "reason": "..."}
@@ -40,6 +40,8 @@ AGENT_PROMPT = """You are Flo, Flowly's assistant, working on a task {name} dele
 with your tools, then call finish. Rules:
 - Only produce things: research with sources, drafts, documents, summaries, plans, subtasks. Never pretend to have
   sent, booked, bought or contacted anything: you can't. Leave those steps to the person (as subtasks if useful).
+- If a team wiki is given, it is the workspace's own knowledge: follow its conventions, templates and facts, and
+  cite the pages you used. Search it before the web for anything internal.
 - Use web_search for facts that may have changed and cite source URLs. Read pages with fetch_page when needed.
 - Put deliverables (drafts, comparisons, plans) in write_document: one document per deliverable, in Markdown.
 - Write in the language of the task. Be concise and practical.
@@ -52,6 +54,10 @@ TOOLS = [
      "parameters": {"type": "object", "required": ["url"], "properties": {"url": {"type": "string"}}}},
     {"name": "read_attachment", "description": "Read one of the task's attachments (text, HTML or PDF) by its id.",
      "parameters": {"type": "object", "required": ["attachment_id"], "properties": {"attachment_id": {"type": "integer"}}}},
+    {"name": "search_wiki", "description": "Search the team wiki linked to the task's workspace or project.",
+     "parameters": {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}}},
+    {"name": "read_wiki_page", "description": "Read a team wiki page in full by its W-id.",
+     "parameters": {"type": "object", "required": ["page_id"], "properties": {"page_id": {"type": "string"}}}},
     {"name": "write_document", "description": "Save a deliverable (Markdown) on the task.",
      "parameters": {"type": "object", "required": ["title", "content"], "properties": {
          "title": {"type": "string"}, "content": {"type": "string"}}}},
@@ -118,7 +124,7 @@ def call(delegation, provider, messages, **kw):
 # --- context -----------------------------------------------------------------------
 
 
-def describe_task(task) -> str:
+def describe_task(task, wiki_budget=0) -> str:
     lines = [f"Task: {task.title}", f"Workspace: {task.workspace.name}"]
     if task.project_id:
         lines.append(f"Project: {task.project.name}")
@@ -133,6 +139,16 @@ def describe_task(task) -> str:
     attachments = list(task.attachments.all()[:20])
     if attachments:
         lines.append("Attachments:\n" + "\n".join(f"- id {a.id}: {a.name} ({a.kind}{', ' + a.url if a.url else ''})" for a in attachments))
+    if wiki_budget:
+        from wiki.search import task_context
+
+        try:
+            wiki = task_context(task, budget=wiki_budget)
+        except Exception:
+            log.exception("Wiki context failed for task %s", task.pk)
+            wiki = ""
+        if wiki:
+            lines.append("\n" + wiki)
     return "\n".join(lines)
 
 
@@ -149,7 +165,7 @@ def parse_json(text: str) -> dict:
 def assess(delegation: Delegation):
     task = delegation.task
     provider = with_model(provider_for(task), "DELEGATION_TRIAGE_MODEL")
-    messages = [{"role": "system", "content": TRIAGE_PROMPT}, {"role": "user", "content": describe_task(task)}]
+    messages = [{"role": "system", "content": TRIAGE_PROMPT}, {"role": "user", "content": describe_task(task, wiki_budget=1500)}]
     # Generous limit: reasoning models spend part of it thinking before they answer.
     result = call(delegation, provider, messages, max_tokens=1500)
     content = result["message"].get("content") or ""
@@ -223,6 +239,20 @@ class Workbench:
             return "This attachment has no address."
         return fetch(a.url)
 
+    def tool_search_wiki(self, query):
+        from wiki.search import describe_hits, search, task_sources
+
+        wikis = list(task_sources(self.task))
+        if not wikis:
+            return "This task's workspace has no wiki."
+        hits = search(wikis, query, limit=5, boost_project=self.task.project_id)
+        return describe_hits(hits, query) if hits else "Nothing in the wiki matches."
+
+    def tool_read_wiki_page(self, page_id):
+        from wiki.search import read, task_sources
+
+        return read(list(task_sources(self.task)), page_id)
+
     def tool_write_document(self, title, content):
         self.documents.append((str(title)[:200], str(content)[:30000]))
         return f"Saved “{title}”."
@@ -256,7 +286,7 @@ def work(delegation: Delegation):
     name = f"for {user.full_name or user.email}"
     messages = [
         {"role": "system", "content": AGENT_PROMPT.format(name=name, steps=MAX_STEPS) + "\n" + language_rule(user)},
-        {"role": "user", "content": describe_task(task) + (f"\n\nPlan: {delegation.plan}" if delegation.plan else "")},
+        {"role": "user", "content": describe_task(task, wiki_budget=7000) + (f"\n\nPlan: {delegation.plan}" if delegation.plan else "")},
     ]
     tools = [{"type": "function", "function": t} for t in TOOLS]
     for step in range(MAX_STEPS):

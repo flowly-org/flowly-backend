@@ -9,10 +9,11 @@ from concierge.jobs import tick as concierge_tick
 from payments.services import tick as payments_tick
 from delegation.engine import process as delegation_process
 from integrations.worker import process_due
+from wiki.sync import tick as wiki_tick
 
 
 class Command(BaseCommand):
-    help = "Send integration deliveries with retries, and run the concierge (Telegram alerts, polling, briefs) and calendar sync."
+    help = "Send integration deliveries with retries, and run the concierge (Telegram alerts, polling, briefs) calendar sync and wiki sync."
 
     def add_arguments(self, parser):
         parser.add_argument("--interval", type=float, default=2.0, help="Seconds to sleep when idle.")
@@ -34,6 +35,7 @@ class Command(BaseCommand):
             concierge_tick()
             calendar_tick()
             payments_tick()
+            wiki_tick()
             done += delegation_process()
             if once:
                 break

@@ -56,7 +56,7 @@ def describe(task: Task, today: date) -> str:
 
 class Toolbox:
     #: Tools that only read: the ones people who aren't linked to Flowly may use in a team chat.
-    READ_ONLY = {"list_tasks", "list_workspaces"}
+    READ_ONLY = {"list_tasks", "list_workspaces", "search_wiki", "read_wiki_page"}
 
     def __init__(self, user, provider, today: date, workspace_id=None, *, team_only=False, read_only=False):
         self.user, self.provider, self.today = user, provider, today
@@ -129,6 +129,16 @@ class Toolbox:
          "parameters": {"type": "object", "properties": {
              "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
              "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
+        {"name": "add_steps", "description": "Break a task into small steps: appends them to the task's notes as a "
+         "checklist. Use for big or vague tasks (especially in ADHD mode): 3-5 concrete steps, the first under 5 minutes.",
+         "parameters": {"type": "object", "required": ["task_id", "steps"], "properties": {
+             "task_id": {"type": "integer"}, "steps": {"type": "array", "items": {"type": "string"}}}}},
+        {"name": "search_wiki", "description": "Search the team wikis linked to the user's workspaces and projects "
+         "(conventions, how-tos, contacts, decisions). Returns matching pages (W-ids) with excerpts.",
+         "parameters": {"type": "object", "required": ["query"], "properties": {
+             "query": {"type": "string"}, "workspace": {"type": "string", "description": "Optional workspace name."}}}},
+        {"name": "read_wiki_page", "description": "Read a wiki page in full by its W-id.",
+         "parameters": {"type": "object", "required": ["page_id"], "properties": {"page_id": {"type": "string"}}}},
         {"name": "remember", "description": "Save a lasting note about the user's preferences or context.",
          "parameters": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string"}}}},
         {"name": "forget", "description": "Remove remembered notes that contain these words (when the user says they're wrong or outdated).",
@@ -388,6 +398,36 @@ class Toolbox:
             else:
                 text += "\nThat file is too big for Telegram: give the link."
         return text
+
+    def tool_add_steps(self, task_id, steps):
+        task = self._task(task_id)
+        steps = [str(x).strip()[:200] for x in (steps or []) if str(x).strip()][:12]
+        if not steps:
+            return "Error: no steps given."
+        checklist = "\n".join(f"- [ ] {x}" for x in steps)
+        notes = (task.description.rstrip() + "\n\n" if task.description.strip() else "") + checklist
+        self._save(task, {"description": notes})
+        return f"Added {len(steps)} steps to #{task.id} “{task.title}”."
+
+    def _wikis(self, workspace=""):
+        from wiki.search import sources
+
+        ids = [self._workspace(workspace).id] if workspace else list(self._workspaces().values_list("id", flat=True))
+        return list(sources(ids))
+
+    def tool_search_wiki(self, query, workspace=""):
+        from wiki.search import describe_hits, search
+
+        wikis = self._wikis(workspace)
+        if not wikis:
+            return "No wiki is linked (workspace managers can add one under Integrations → Wiki)."
+        hits = search(wikis, query, limit=5)
+        return describe_hits(hits, query) if hits else "Nothing in the wiki matches."
+
+    def tool_read_wiki_page(self, page_id):
+        from wiki.search import read
+
+        return read(self._wikis(), page_id, limit=5500)
 
     def tool_remember(self, note):
         from .personality import MEMORY_LIMIT, notes

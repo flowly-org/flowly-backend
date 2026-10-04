@@ -15,7 +15,9 @@ _last_brief_check = 0.0
 
 
 def tick():
-    for job in (team_jobs, team_briefs, reflections):
+    from . import focus
+
+    for job in (team_jobs, team_briefs, reflections, focus.tick):
         try:
             job()
         except Exception:

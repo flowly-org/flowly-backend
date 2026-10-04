@@ -12,10 +12,27 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro",
-                  "has_pro_plus", "is_bot"]
+                  "has_pro_plus", "is_bot", "adhd_mode", "focus"]
         read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "has_pro_plus", "is_bot"]
 
+    def validate_focus(self, value):
+        from .focus import clean
+
+        try:
+            return clean(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
+
+    def to_representation(self, obj):
+        from .focus import options
+
+        data = super().to_representation(obj)
+        data["focus"] = options(obj)
+        return data
+
     def update(self, instance, validated_data):
+        if "focus" in validated_data:
+            validated_data["focus"] = {**(instance.focus or {}), **validated_data["focus"]}
         home_changed = "home_location" in validated_data and validated_data["home_location"] != instance.home_location
         user = super().update(instance, validated_data)
         if home_changed:

@@ -65,6 +65,7 @@ class Notification(models.Model):
         COMMENT = "comment", "New comment"
         BRIEF = "brief", "Daily brief"
         SHARED = "shared", "Shared with you"
+        FOCUS = "focus", "Focus nudge"
 
     class Telegram(models.TextChoices):
         NONE = "none", "Not sent"
@@ -138,3 +139,14 @@ class BotJob(models.Model):
 
     class Meta:
         ordering = ["created_at", "id"]
+
+
+class FocusNudge(models.Model):
+    """ADHD mode: a check-in, break nudge or heads-up already sent (so each goes out once)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    key = models.CharField(max_length=80)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "key"], name="unique_focus_nudge")]

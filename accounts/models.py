@@ -48,6 +48,10 @@ class User(AbstractUser):
     github_login = models.CharField(
         max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
     )
+    #: Opt-in ADHD mode: one thing at a time in the app, shorter and more concrete Flo, check-ins and heads-ups.
+    adhd_mode = models.BooleanField(default=False)
+    #: ADHD mode options (see accounts.focus.DEFAULTS).
+    focus = models.JSONField(default=dict, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

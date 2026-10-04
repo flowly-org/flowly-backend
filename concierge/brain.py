@@ -66,6 +66,7 @@ def language_rule(user) -> str:
 
 
 def system_prompt(user, now: datetime) -> str:
+    from . import focus
     from .personality import habits, prompt_for
 
     profile = profile_for(user)
@@ -90,6 +91,7 @@ def system_prompt(user, now: datetime) -> str:
         f"What you remember about {name} (adapt to it; save lasting preferences with remember, drop wrong ones with "
         f"forget):\n{memory}"
         + (f"\nWhat their activity shows:\n{observed}" if observed else "")
+        + (f"\n{focus.prompt(user)}" if focus.active(user) else "")
     )
 
 
@@ -160,6 +162,8 @@ def plain_brief(user, now) -> str:
 
 def brief(user) -> str:
     """Morning brief: today's plan across workspaces, written by the LLM (plain fallback)."""
+    from . import focus
+
     now = local_now(user)
     if availability(user):
         return plain_brief(user, now)
@@ -185,9 +189,10 @@ def brief(user) -> str:
     messages = [
         {"role": "system", "content": system_prompt(user, now)},
         {"role": "user", "content": (
-            "Write my morning brief for today. Start with a one-line greeting, then the plan grouped by workspace or "
-            "project, urgent and carried-over items first, then anything due today. Max ~12 lines. Suggest a sensible "
-            f"first task.\n\nTasks for today:\n{data}\n\nDue today:\n{due_text}{calendar_text}"
+            ("Write my morning brief for today. Start with a one-line greeting, then the plan grouped by workspace or "
+             "project, urgent and carried-over items first, then anything due today. Max ~12 lines. Suggest a sensible "
+             "first task." if not focus.active(user) else "Write my morning brief for today. " + focus.brief_rules(user))
+            + f"\n\nTasks for today:\n{data}\n\nDue today:\n{due_text}{calendar_text}"
         )},
     ]
     try:

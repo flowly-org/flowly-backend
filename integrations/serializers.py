@@ -19,7 +19,7 @@ class DeliverySerializer(serializers.ModelSerializer):
 class IntegrationSerializer(serializers.ModelSerializer):
     project = serializers.PrimaryKeyRelatedField(queryset=Project.objects.all(), allow_null=True, required=False)
     info = serializers.SerializerMethodField()
-    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True, help_text="AI providers: stored encrypted; blank keeps the current key.")
+    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True, help_text="AI providers: API key; wikis: access token for private repositories. Stored encrypted; blank keeps the current one.")
     last_delivery = serializers.SerializerMethodField()
     aliases = serializers.ListField(
         child=serializers.CharField(max_length=60), required=False, write_only=True,

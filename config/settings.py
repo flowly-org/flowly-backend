@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "calendars",
     "payments",
     "delegation",
+    "wiki",
 ]
 
 MIDDLEWARE = [
