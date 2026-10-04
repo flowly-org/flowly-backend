@@ -66,6 +66,9 @@ class Toolbox:
         #: Team chats: private tasks never show, whoever asks.
         self.team_only = team_only
         self.read_only = read_only
+        #: Where the conversation happens ("telegram", "web"), and things to send after the reply (e.g. files).
+        self.channel = "web"
+        self.outbox: list[dict] = []
 
     # --- schema ---------------------------------------------------------------
 
@@ -121,6 +124,11 @@ class Toolbox:
         {"name": "delegate_task", "description": "Hand a task to the AI agent (Pro Plus): it researches, drafts or plans "
          "and reports back on the task. Use when the user agrees to delegate.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
+        {"name": "app_downloads", "description": "Links to the latest Flowly apps (desktop tray timer for macOS, Windows, "
+         "Linux; Android app; iPhone instructions). On Telegram you can also send the installer file itself.",
+         "parameters": {"type": "object", "properties": {
+             "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
+             "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
         {"name": "remember", "description": "Save a lasting note about the user's preferences or context.",
          "parameters": {"type": "object", "required": ["note"], "properties": {"note": {"type": "string"}}}},
         {"name": "forget", "description": "Remove remembered notes that contain these words (when the user says they're wrong or outdated).",
@@ -365,6 +373,21 @@ class Toolbox:
             return f"Error: {exc}"
         used = engine.quota(self.user)
         return f"Delegated #{task.id} “{task.title}” (delegation {d.id}; {used['used']}/{used['limit']} this month). I'll report on the task when done."
+
+    def tool_app_downloads(self, platform="all", send_file=False):
+        from . import downloads as apps
+
+        text = apps.describe(platform)
+        if send_file:
+            if self.channel != "telegram":
+                return text + "\n(Files can only be sent on Telegram: here, give the links.)"
+            files = apps.sendable(platform)
+            self.outbox += [{"kind": "app_file", "file": f} for f in files]
+            if files:
+                text += "\nThe file(s) will be sent right after your reply: " + ", ".join(files)
+            else:
+                text += "\nThat file is too big for Telegram: give the link."
+        return text
 
     def tool_remember(self, note):
         from .personality import MEMORY_LIMIT, notes

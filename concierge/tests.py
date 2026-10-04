@@ -24,6 +24,9 @@ class FakeResponse:
     def json(self):
         return self._data
 
+    def raise_for_status(self):
+        pass
+
 
 class FakeWorld:
     """Fakes both the LLM (/chat/completions) and Telegram (api.telegram.org) over requests.request."""
@@ -413,6 +416,63 @@ class TelegramPhotoAndTimerTests(APITestCase):
             brain.reply(self.user, "stop")
         self.assertIsNone(self.client.get("/api/my/timer/").data["entry"])
 
+
+    RELEASE = {"tag_name": "v0.3.0", "assets": [{"name": "Flowly-Android.apk", "size": 3_700_000},
+                                                {"name": "Flowly-macOS-universal.dmg", "size": 9_500_000},
+                                                {"name": "Flowly-Linux-x86_64.AppImage", "size": 84_000_000}]}
+
+    def fake_github(self, url, **kwargs):
+        if "api.github.com" in url:
+            return FakeResponse(self.RELEASE)
+        response = mock.Mock(status_code=200)
+        response.raw.read.return_value = b"APK-BYTES"
+        return response
+
+    def fake_upload(self, url, data=None, files=None, timeout=None):
+        self.uploads.append((url, data, files))
+        return FakeResponse({"ok": True, "result": {"document": {"file_id": "tg-file-1"}}})
+
+    def test_flo_sends_app_links_and_files(self):
+        from concierge import bot, downloads as apps
+
+        apps._cache["data"] = None
+        self.uploads = []
+        world = FakeWorld(llm_replies=[
+            tool_call("app_downloads", {"platform": "android", "send_file": True}),
+            {"role": "assistant", "content": "Here's the Android app."},
+        ])
+        with mock.patch("integrations.http.requests.request", world), \
+                mock.patch("concierge.downloads.requests.get", side_effect=self.fake_github), \
+                mock.patch("requests.post", side_effect=self.fake_upload):
+            bot.handle_update({"update_id": 1, "message": {"chat": {"id": 777, "type": "private"}, "text": "send me the android app"}})
+            tool_result = world.llm_calls[1]["json"]["messages"][-1]["content"]
+            self.assertIn("releases/latest/download/Flowly-Android.apk (4 MB)", tool_result)
+            self.assertIn("0.3.0", tool_result)
+            self.assertEqual(len(self.uploads), 1)
+            self.assertEqual(self.uploads[0][2]["document"][0], "Flowly-Android.apk")
+            # The second time Telegram's file id is reused: no new upload.
+            apps.send_file(777, "Flowly-Android.apk")
+            self.assertEqual(len(self.uploads), 1)
+            # /apps works without the model; the AppImage is too big to send, so it stays a link.
+            bot.handle_update({"update_id": 2, "message": {"chat": {"id": 777, "type": "private"}, "text": "/apps linux"}})
+            self.assertIn("Flowly-Linux-x86_64.AppImage (84 MB)", world.sent[-1]["text"])
+            self.assertEqual(apps.sendable("linux"), [])
+            self.assertEqual(apps.sendable("mac"), ["Flowly-macOS-universal.dmg"])
+            self.assertIn("Add to Home Screen", apps.describe("iphone"))
+
+    def test_app_links_on_the_web_chat_without_files(self):
+        from concierge.tools import Toolbox
+
+        from concierge import downloads as apps
+
+        apps._cache["data"] = None
+        with mock.patch("concierge.downloads.requests.get", side_effect=self.fake_github):
+            box = Toolbox(self.user, None, timezone.localdate())
+            text = box.tool_app_downloads("desktop", send_file=True)
+        self.assertIn("Flowly-macOS-universal.dmg", text)
+        self.assertNotIn("Flowly-Android.apk", text)
+        self.assertIn("only be sent on Telegram", text)
+        self.assertEqual(box.outbox, [])
 
 @override_settings(OPENROUTER_API_KEY="or-key", OPENROUTER_MODEL="test/model", TELEGRAM_BOT_TOKEN="123:abc", TELEGRAM_MODE="polling",
                    SLACK_CLIENT_ID="cid", SLACK_CLIENT_SECRET="csecret", SLACK_SIGNING_SECRET="sign",

@@ -61,3 +61,20 @@ def set_webhook(url: str, secret: str):
 
 def delete_webhook():
     return call("deleteWebhook", drop_pending_updates=False)
+
+
+def upload_document(chat_id: int, filename: str, data: bytes, caption: str = ""):
+    """Upload a file (multipart, up to 50 MB) and return Telegram's message (with document.file_id)."""
+    import requests
+
+    from integrations.http import DeliveryError
+
+    url = f"{settings.TELEGRAM_API_URL}/bot{conf.get("TELEGRAM_BOT_TOKEN")}/sendDocument"
+    try:
+        res = requests.post(url, data={"chat_id": chat_id, "caption": caption}, files={"document": (filename, data)}, timeout=180)
+    except requests.RequestException as exc:
+        raise DeliveryError(f"Telegram upload failed: {exc}") from exc
+    body = res.json() if res.content else {}
+    if not body.get("ok"):
+        raise DeliveryError(f"Telegram upload failed: {body.get('description', res.status_code)}", status=res.status_code)
+    return body.get("result")

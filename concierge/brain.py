@@ -93,9 +93,12 @@ def system_prompt(user, now: datetime) -> str:
     )
 
 
-def run(user, messages, *, tools=True, max_tokens=2500) -> str:
+def run(user, messages, *, tools=True, max_tokens=2500, channel="web", outbox=None) -> str:
     provider = provider_for(user)
     toolbox = Toolbox(user, provider, local_now(user).date())
+    toolbox.channel = channel
+    if outbox is not None:
+        toolbox.outbox = outbox
     for _ in range(MAX_STEPS):
         result = chat(provider, messages, tools=Toolbox.openai_tools() if tools else None, max_tokens=max_tokens, user=user)
         message = result["message"]
@@ -109,7 +112,7 @@ def run(user, messages, *, tools=True, max_tokens=2500) -> str:
     return "I got a bit lost doing that. Could you rephrase?"
 
 
-def reply(user, text: str, channel="telegram") -> str:
+def reply(user, text: str, channel="telegram", outbox=None) -> str:
     reason = availability(user)
     if reason:
         return reason
@@ -119,7 +122,7 @@ def reply(user, text: str, channel="telegram") -> str:
     messages += [{"role": m.role, "content": m.content} for m in history]
     messages.append({"role": "user", "content": text})
     try:
-        answer = run(user, messages)
+        answer = run(user, messages, channel=channel, outbox=outbox)
     except LLMUnavailable as exc:
         return str(exc)
     except DeliveryError as exc:
