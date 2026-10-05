@@ -351,3 +351,17 @@ class TaskTemplate(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class TaskDependency(models.Model):
+    """`task` can't really start (or finish) before `depends_on` is done."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="blocked_by_links")
+    depends_on = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="blocking_links")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["task", "depends_on"], name="unique_task_dependency"),
+            models.CheckConstraint(condition=~models.Q(task=models.F("depends_on")), name="no_self_dependency"),
+        ]

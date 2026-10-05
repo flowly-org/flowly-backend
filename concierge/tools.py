@@ -57,6 +57,9 @@ def describe(task: Task, today: date) -> str:
 
     if is_rule(task.recurrence):
         bits.append(f"repeats {repeat_text(task.recurrence)}")
+    blockers = [d.depends_on for d in task.blocked_by_links.select_related("depends_on__status") if not d.depends_on.status.is_done]
+    if blockers:
+        bits.append("blocked by " + ", ".join(f"#{b.id}" for b in blockers))
     if task.checklist:
         done = sum(1 for i in task.checklist if i.get("done"))
         bits.append(f"checklist {done}/{len(task.checklist)}")
@@ -150,6 +153,9 @@ class Toolbox:
          "parameters": {"type": "object", "properties": {
              "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
              "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
+        {"name": "set_dependency", "description": "Record that a task waits for another one (blocked by), or remove that link.",
+         "parameters": {"type": "object", "required": ["task_id", "depends_on"], "properties": {
+             "task_id": {"type": "integer"}, "depends_on": {"type": "integer"}, "remove": {"type": "boolean"}}}},
         {"name": "block_time", "description": "Block time in the user's day for a task (time blocking). Without a start, "
          "the first free slot of the day that fits.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {
@@ -465,6 +471,13 @@ class Toolbox:
         items = list(task.checklist or []) + [{"text": x, "done": False} for x in steps]
         self._save(task, {"checklist": items})
         return f"Added {len(steps)} steps to the checklist of #{task.id} “{task.title}”."
+
+    def tool_set_dependency(self, task_id, depends_on, remove=False):
+        task, blocker = self._task(task_id), self._task(depends_on)
+        current = list(task.blocked_by_links.values_list("depends_on_id", flat=True))
+        ids = [i for i in current if i != blocker.id] if remove else current + [blocker.id]
+        self._save(task, {"blocked_by": ids})
+        return (f"#{task.id} no longer waits for #{blocker.id}." if remove else f"#{task.id} “{task.title}” now waits for #{blocker.id} “{blocker.title}”.")
 
     def tool_block_time(self, task_id, start="", minutes=None):
         from datetime import datetime, timedelta

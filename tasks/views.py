@@ -99,7 +99,7 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         return with_counts(
-            self.workspace.tasks.filter(member_visible_q(self.request.user)).prefetch_related("tags").select_related("status")
+            self.workspace.tasks.filter(member_visible_q(self.request.user)).prefetch_related("tags", "blocking_links", "blocked_by_links__depends_on__status").select_related("status")
         ).order_by("position", "id")
 
     # Task changes feed the workspace's outgoing integrations (webhooks, Slack, GitHub).
@@ -197,7 +197,7 @@ class MyTaskListView(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
         return with_counts(
-            Task.objects.filter(workspace__memberships__user=user).filter(member_visible_q(user)).prefetch_related("tags")
+            Task.objects.filter(workspace__memberships__user=user).filter(member_visible_q(user)).prefetch_related("tags", "blocking_links", "blocked_by_links__depends_on__status")
         ).order_by("position", "id")
 
 

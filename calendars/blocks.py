@@ -66,7 +66,8 @@ def queue(user, day, today):
     if day == today:
         cond |= Q(planned_date__lt=day)
     tasks = list(Task.objects.filter(workspace__memberships__user=user, assignee=user, status__is_done=False)
-                 .filter(member_visible_q(user)).filter(cond).select_related("priority", "workspace", "project").distinct())
+                 .filter(member_visible_q(user)).filter(cond).exclude(blocked_by_links__depends_on__status__is_done=False)
+                 .select_related("priority", "workspace", "project").distinct())
     ranks = {}
     for t in Tag.objects.filter(group__kind="priority", workspace__in={t.workspace_id for t in tasks}).order_by("position", "id"):
         ranks.setdefault(t.workspace_id, []).append(t.id)

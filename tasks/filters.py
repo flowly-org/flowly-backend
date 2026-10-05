@@ -21,6 +21,8 @@ class TaskFilter(django_filters.FilterSet):
     done = django_filters.BooleanFilter(field_name="status__is_done")
     q = django_filters.CharFilter(method="filter_search")
     workspace = django_filters.NumberFilter(field_name="workspace")
+    span_from = django_filters.DateFilter(method="filter_span_from", help_text="Planned or due on/after (timeline).")
+    span_to = django_filters.DateFilter(method="filter_span_to", help_text="Planned or due on/before (timeline).")
 
     class Meta:
         model = Task
@@ -50,6 +52,12 @@ class TaskFilter(django_filters.FilterSet):
         if value.isdigit():
             return queryset.filter(project_id=int(value))
         return queryset.none()
+
+    def filter_span_from(self, queryset, name, value):
+        return queryset.filter(Q(planned_date__gte=value) | Q(due_date__gte=value))
+
+    def filter_span_to(self, queryset, name, value):
+        return queryset.filter(Q(planned_date__lte=value) | Q(due_date__lte=value))
 
     def filter_search(self, queryset, name, value):
         return queryset.filter(Q(title__icontains=value) | Q(description__icontains=value))

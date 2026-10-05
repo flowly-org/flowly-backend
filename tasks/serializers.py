@@ -3,7 +3,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Project, Tag, TagGroup, Task
+from .models import Project, Tag, TagGroup, Task, TaskDependency
 from .services import default_status
 
 User = get_user_model()
@@ -127,6 +127,7 @@ class TaskSerializer(WorkspaceScopedSerializer):
         ),
         "status": lambda ws: Tag.objects.filter(workspace=ws, group__kind=TagGroup.Kind.STATUS),
         "priority": lambda ws: Tag.objects.filter(workspace=ws, group__kind=TagGroup.Kind.PRIORITY),
+        "blocked_by": lambda ws: Task.objects.filter(workspace=ws),
     }
 
     status = serializers.PrimaryKeyRelatedField(
@@ -145,6 +146,10 @@ class TaskSerializer(WorkspaceScopedSerializer):
     created_by = serializers.PrimaryKeyRelatedField(read_only=True)
     comment_count = serializers.SerializerMethodField()
     attachment_count = serializers.SerializerMethodField()
+    blocked_by = serializers.PrimaryKeyRelatedField(queryset=Task.objects.none(), many=True, required=False, write_only=True,
+                                                    help_text="Ids of tasks (same workspace) this one waits for.")
+    blocking = serializers.SerializerMethodField()
+    blocked = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -171,6 +176,9 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "estimate_minutes",
             "recurrence",
             "series",
+            "blocked_by",
+            "blocking",
+            "blocked",
             "comment_count",
             "attachment_count",
         ]
@@ -196,6 +204,36 @@ class TaskSerializer(WorkspaceScopedSerializer):
                 )
             seen[tag.group_id] = tag
         return tags
+
+    def _links(self, obj, attr, field):
+        cache = getattr(obj, "_prefetched_objects_cache", {})
+        rows = cache[attr] if attr in cache else getattr(obj, attr).all()
+        return rows, field
+
+    def get_blocking(self, obj):
+        if not obj.pk:
+            return []
+        rows, _ = self._links(obj, "blocking_links", "task_id")
+        return [r.task_id for r in rows]
+
+    def get_blocked(self, obj):
+        if not obj.pk:
+            return False
+        rows, _ = self._links(obj, "blocked_by_links", "depends_on")
+        return any(not r.depends_on.status.is_done for r in rows)
+
+    def validate_blocked_by(self, blockers):
+        from .dependencies import would_loop
+
+        me = self.instance.pk if self.instance else None
+        for b in blockers:
+            if me and b.pk == me:
+                raise serializers.ValidationError("A task can't wait for itself.")
+            if me and would_loop(me, b.pk):
+                raise serializers.ValidationError(f"“{b.title}” already waits for this task (that would be a loop).")
+        if len(blockers) > 50:
+            raise serializers.ValidationError("At most 50 blockers.")
+        return blockers
 
     def validate_checklist(self, items):
         import secrets
@@ -236,6 +274,13 @@ class TaskSerializer(WorkspaceScopedSerializer):
         data = super().to_representation(obj)
         if not is_rule(data.get("recurrence")):
             data["recurrence"] = None  # internal marker of an occurrence already repeated
+        if obj.pk:
+            rows, _ = self._links(obj, "blocked_by_links", "depends_on_id")
+            data["blocked_by"] = [r.depends_on_id for r in rows]
+            data["blocked_by_info"] = [{"id": r.depends_on_id, "ref": r.depends_on.ref, "title": r.depends_on.title,
+                                        "done": r.depends_on.status.is_done} for r in rows]
+        else:
+            data["blocked_by"], data["blocked_by_info"] = [], []
         nxt = getattr(obj, "_next_occurrence", None)
         if nxt is not None:
             data["next_occurrence"] = {"id": nxt.id, "planned_date": nxt.planned_date, "due_date": nxt.due_date}
@@ -261,7 +306,13 @@ class TaskSerializer(WorkspaceScopedSerializer):
             top = Task.objects.filter(workspace=workspace).aggregate(m=Max("position"))["m"] or 0
             validated_data["position"] = top + 1024
         self._apply_status(validated_data)
-        return super().create(validated_data)
+        blockers = validated_data.pop("blocked_by", None)
+        task = super().create(validated_data)
+        if blockers:
+            from .dependencies import set_blockers
+
+            set_blockers(task, blockers)
+        return task
 
     def update(self, instance, validated_data):
         from . import recurrence
@@ -270,7 +321,18 @@ class TaskSerializer(WorkspaceScopedSerializer):
         self._apply_status(validated_data, instance)
         if "recurrence" in validated_data and validated_data["recurrence"] is None and not recurrence.is_rule(instance.recurrence):
             validated_data.pop("recurrence")  # keep the "already repeated" marker when a form sends no rule
+        blockers = validated_data.pop("blocked_by", None)
         task = super().update(instance, validated_data)
+        if blockers is not None:
+            from .dependencies import set_blockers
+
+            set_blockers(task, blockers)
+            getattr(task, "_prefetched_objects_cache", {}).pop("blocked_by_links", None)
+        if task.status.is_done and not was_done:
+            from .dependencies import notify_unblocked
+
+            request = self.context.get("request")
+            notify_unblocked(task, getattr(request, "user", None))
         if task.status.is_done and not was_done and recurrence.is_rule(task.recurrence):
             request = self.context.get("request")
             task._next_occurrence = recurrence.spawn_next(task, getattr(request, "user", None))
