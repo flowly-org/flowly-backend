@@ -1,8 +1,10 @@
 """The bulk-add list format on the server (same rules as the web dialog's bulk-parse.ts).
 
     - Call the accountant !high @tomorrow #calls
-    - [x] Already done +Website
+    - [x] Already done +Website ~30m
       an indented line becomes a note on the task above
+      [ ] an indented checkbox becomes a checklist item
+    ~30m / ~1h / ~1h30 is an estimate; @+3 is three days after the start day (templates).
 """
 
 import re
@@ -16,6 +18,17 @@ from .models import Tag, TagGroup
 BULLET = re.compile(r"^(?:[-*•+]|\d+[.)])\s+")
 CHECKBOX = re.compile(r"^\[( |x|X)\]\s*")
 WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+ESTIMATE = re.compile(r"^~(\d+(?:[.,]\d+)?)(m|min|h)?(\d{1,2})?$", re.I)
+
+
+def parse_estimate(token: str):
+    """"~30m", "~1h", "~1h30", "~1.5h", "~90" → minutes, else None."""
+    m = ESTIMATE.match(token)
+    if not m:
+        return None
+    value, unit, extra = float(m.group(1).replace(",", ".")), (m.group(2) or "m").lower(), m.group(3)
+    minutes = value * 60 + int(extra or 0) if unit == "h" else value
+    return int(minutes) if 0 < minutes <= 7 * 24 * 60 else None
 
 
 def _norm(s: str) -> str:
@@ -31,6 +44,10 @@ def parse_date(token: str, today: date):
         return today + timedelta(days=1)
     if t in ("backlog", "someday"):
         return None
+    relative = re.fullmatch(r"\+(\d{1,3})(d|w)?", t)
+    if relative:
+        n = int(relative.group(1))
+        return today + timedelta(days=n * 7 if relative.group(2) == "w" else n)
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
         try:
             return date.fromisoformat(t)
@@ -60,9 +77,14 @@ def parse(text: str, workspace, today: date) -> list[dict]:
         line = BULLET.sub("", raw.strip(), count=1)
         if indent > base and drafts:
             last = drafts[-1]
-            last["notes"] = (last["notes"] + "\n" if last["notes"] else "") + line
+            item = CHECKBOX.match(line)
+            if item and line[item.end():].strip():
+                last["checklist"].append({"text": line[item.end():].strip(), "done": item.group(1).lower() == "x"})
+            else:
+                last["notes"] = (last["notes"] + "\n" if last["notes"] else "") + line
             continue
-        draft = {"title": "", "notes": "", "done": False, "priority": None, "tags": [], "project": None, "date": ...}
+        draft = {"title": "", "notes": "", "done": False, "priority": None, "tags": [], "project": None, "date": ...,
+                 "estimate": None, "checklist": []}
         box = CHECKBOX.match(line)
         if box:
             draft["done"] = box.group(1).lower() == "x"
@@ -70,6 +92,9 @@ def parse(text: str, workspace, today: date) -> list[dict]:
         words = []
         for word in line.split():
             sigil, value = word[0], word[1:]
+            if value and sigil == "~" and parse_estimate(word):
+                draft["estimate"] = parse_estimate(word)
+                continue
             if value and sigil == "!":
                 p = next((t for t in priorities if t.name.lower().startswith(value.lower())), None)
                 if p:
@@ -140,6 +165,8 @@ def create_from_text(user, workspace, text: str, today: date, default_date=...):
             "project": d["project"].id if d["project"] else None,
             "priority": d["priority"].id if d["priority"] else None,
             "tags": [t.id for t in d["tags"]],
+            "estimate_minutes": d.get("estimate"),
+            "checklist": d.get("checklist") or [],
         }
         if d["done"] and done:
             item["status"] = done.id

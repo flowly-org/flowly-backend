@@ -144,6 +144,11 @@ class Toolbox:
          "parameters": {"type": "object", "properties": {
              "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
              "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
+        {"name": "use_template", "description": "Create the tasks of a saved task template (e.g. 'Client onboarding'), "
+         "dated from a start day. Without a name, lists the templates.",
+         "parameters": {"type": "object", "properties": {
+             "name": {"type": "string"}, "workspace": {"type": "string"},
+             "start": {"type": "string", "description": "'today', 'tomorrow' or YYYY-MM-DD (default today)."}}}},
         {"name": "set_reminder", "description": "Remind the user about a task at a moment (in-app and Telegram).",
          "parameters": {"type": "object", "required": ["task_id", "at"], "properties": {
              "task_id": {"type": "integer"}, "at": {"type": "string", "description": "Local date and time, YYYY-MM-DDTHH:MM."}}}},
@@ -433,6 +438,33 @@ class Toolbox:
         items = list(task.checklist or []) + [{"text": x, "done": False} for x in steps]
         self._save(task, {"checklist": items})
         return f"Added {len(steps)} steps to the checklist of #{task.id} “{task.title}”."
+
+    def tool_use_template(self, name="", workspace="", start="today"):
+        from tasks.models import TaskTemplate
+
+        qs = TaskTemplate.objects.filter(workspace__in=self._workspaces()).select_related("workspace")
+        if workspace:
+            qs = qs.filter(workspace=self._workspace(workspace))
+        if not name:
+            return "\n".join(f"{t.name} ({t.workspace.name})" for t in qs[:50]) or "No templates yet (Board → Templates)."
+        tpl = qs.filter(name__iexact=name).first() or qs.filter(name__icontains=name).first()
+        if tpl is None:
+            raise LookupError(f'No template "{name}". Call use_template without a name to list them.')
+        if self.read_only:
+            raise ValueError("Read-only here.")
+        from tasks.bulk import create_many, parse
+
+        day = parse_day(start, self.today) or self.today
+        payloads = []
+        for d in parse(tpl.body, tpl.workspace, day):
+            when = day if d["date"] is ... else d["date"]
+            payloads.append({"title": d["title"], "description": d["notes"], "assignee": self.user.id,
+                             "planned_date": when.isoformat() if when else None,
+                             "project": d["project"].id if d["project"] else tpl.project_id,
+                             "priority": d["priority"].id if d["priority"] else None, "tags": [t.id for t in d["tags"]],
+                             "estimate_minutes": d.get("estimate"), "checklist": d.get("checklist") or []})
+        created = create_many(self.user, tpl.workspace, payloads)
+        return f"Created {len(created)} tasks from “{tpl.name}”:\n" + "\n".join(describe(t, self.today) for t in created)
 
     def tool_set_reminder(self, task_id, at):
         from datetime import datetime

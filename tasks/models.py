@@ -329,3 +329,24 @@ class Reminder(models.Model):
 
     class Meta:
         ordering = ["remind_at", "id"]
+
+
+class TaskTemplate(models.Model):
+    """A reusable set of tasks, written in the bulk-add format (with @+N days after the start, ~estimates, checklists)."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="task_templates")
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=300, blank=True)
+    #: The tasks, one per line, in the bulk-add format.
+    body = models.TextField()
+    #: Project every task goes to unless its line says +Another.
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+
+    def __str__(self):
+        return self.name

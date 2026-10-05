@@ -110,3 +110,63 @@ class PlanningTests(APITestCase):
         self.assertIn("I'll remind you", box.run("set_reminder", f'{{"task_id": {rent.id}, "at": "{when}"}}'))
         self.assertIn("Error", box.run("create_task", '{"title": "x", "repeat": {"freq": "hourly"}}'))
         self.assertIn("checklist 0/2", box.run("add_steps", f'{{"task_id": {rent.id}, "steps": ["Open bank app", "Transfer"]}}') + box.run("list_tasks", "{}"))
+
+
+class TemplatesAndSearchTests(APITestCase):
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "tpl@example.com", "password": "s3cure-Passw0rd", "full_name": "T"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="tpl@example.com")
+        self.ws = self.client.get("/api/workspaces/").data[0]["id"]
+        self.clients = self.client.post(f"/api/workspaces/{self.ws}/projects/", {"name": "Clients"}, format="json").data["id"]
+        self.start = date(2026, 11, 2)
+
+    def test_parser_estimates_offsets_checklists(self):
+        from tasks.bulk import parse, parse_estimate
+        from workspaces.models import Workspace
+
+        self.assertEqual([parse_estimate(x) for x in ["~30m", "~1h", "~1h30", "~1.5h", "~90", "~x"]], [30, 60, 90, 90, 90, None])
+        drafts = parse("- Kickoff call ~1h @+0\n  [ ] Send agenda\n  [x] Book room\n  bring slides\n- Report @+1w", Workspace.objects.get(pk=self.ws), self.start)
+        self.assertEqual(drafts[0]["estimate"], 60)
+        self.assertEqual(drafts[0]["checklist"], [{"text": "Send agenda", "done": False}, {"text": "Book room", "done": True}])
+        self.assertEqual(drafts[0]["notes"], "bring slides")
+        self.assertEqual(drafts[1]["date"], self.start + timedelta(days=7))
+
+    def test_template_crud_apply_and_from_tasks(self):
+        url = f"/api/workspaces/{self.ws}/templates/"
+        res = self.client.post(url, {"name": "Client onboarding", "project": self.clients,
+                                     "body": "- Kickoff call ~1h\n  [ ] Send agenda\n- Send contract @+1 ~15m\n- Follow-up @+7"}, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["count"], 3)
+        created = self.client.post(f"{url}{res.data['id']}/apply/", {"start": str(self.start)}, format="json").data
+        self.assertEqual([(t["title"], t["planned_date"], t["project"], t["estimate_minutes"]) for t in created], [
+            ("Kickoff call", "2026-11-02", self.clients, 60), ("Send contract", "2026-11-03", self.clients, 15),
+            ("Follow-up", "2026-11-09", self.clients, None)])
+        self.assertEqual(created[0]["checklist"][0]["text"], "Send agenda")
+        self.assertEqual(created[0]["assignee"], self.user.id)
+        # Save existing tasks as a template (dates relative to the first).
+        tpl = self.client.post(f"{url}from-tasks/", {"name": "Copy", "tasks": [t["id"] for t in created]}, format="json").data
+        self.assertIn("- Send contract +Clients @+1 ~15m", tpl["body"])
+        self.assertIn("  [ ] Send agenda", tpl["body"])
+
+        from concierge.tools import Toolbox
+
+        out = Toolbox(self.user, None, self.start).run("use_template", '{"name": "onboarding", "start": "2026-12-01"}')
+        self.assertIn("Created 3 tasks", out)
+
+    def test_search(self):
+        a = self.client.post(f"/api/workspaces/{self.ws}/tasks/", {"title": "Renew the domain", "description": "flowly.net at Cloudflare"}, format="json").data
+        b = self.client.post(f"/api/workspaces/{self.ws}/tasks/", {"title": "Budget", "checklist": ["Ask about domain costs"]}, format="json").data
+        c = self.client.post(f"/api/workspaces/{self.ws}/tasks/", {"title": "Call Anna"}, format="json").data
+        self.client.post(f"/api/workspaces/{self.ws}/tasks/{c['id']}/comments/", {"body": "She manages the domain transfer"}, format="json")
+        other = User.objects.create_user(email="o@example.com", password="s3cure-Passw0rd")
+        from workspaces.models import Membership
+
+        Membership.objects.create(workspace_id=self.ws, user=other)
+        Task.objects.create(workspace_id=self.ws, title="Private domain note", visibility="private", created_by=other,
+                            status=Task.objects.get(pk=a["id"]).status)
+        res = self.client.get("/api/my/search/?q=domain").data
+        self.assertEqual([r["id"] for r in res if r["type"] == "task"], [a["id"], b["id"], c["id"]])
+        self.assertIn("transfer", res[2]["snippet"])
+        self.assertTrue(any(r["type"] == "project" for r in self.client.get("/api/my/search/?q=clie").data))
+        self.assertEqual(self.client.get("/api/my/search/?q=d").data, [])

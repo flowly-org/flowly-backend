@@ -6,12 +6,14 @@ from django.urls import include, path
 
 from .discussion import AttachmentViewSet, CommentViewSet
 from .sharing import BulkCreateView, TaskSharesView
+from .templates import TemplateViewSet
 from .views import ProjectViewSet, TagGroupViewSet, TagViewSet, TaskRemindersView, TaskViewSet
 
 router = SimpleRouter()
 router.register("projects", ProjectViewSet, basename="project")
 router.register("tag-groups", TagGroupViewSet, basename="tag-group")
 router.register("tags", TagViewSet, basename="tag")
+router.register("templates", TemplateViewSet, basename="template")
 router.register("tasks", TaskViewSet, basename="task")
 router.register("integrations", IntegrationViewSet, basename="integration")
 
