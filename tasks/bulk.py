@@ -4,7 +4,7 @@
     - [x] Already done +Website ~30m
       an indented line becomes a note on the task above
       [ ] an indented checkbox becomes a checklist item
-    ~30m / ~1h / ~1h30 is an estimate; @+3 is three days after the start day (templates).
+    ~30m / ~1h / ~1h30 is an estimate; @+3 is three days after the start day (templates); =Anna assigns to a member.
 """
 
 import re
@@ -59,6 +59,20 @@ def parse_date(token: str, today: date):
     return ...
 
 
+def find_member(members, name: str):
+    """=Anna, =anna.rossi, =Anna-Rossi → the workspace member (by name, first name or email)."""
+    key = _norm(name)
+    for match in (
+        lambda u: _norm(u.full_name or "") == key,
+        lambda u: _norm(u.email.split("@")[0].replace(".", " ")) == key or u.email.lower() == name.lower(),
+        lambda u: _norm((u.full_name or "").split(" ")[0]) == key,
+    ):
+        found = [u for u in members if match(u)]
+        if len(found) == 1:
+            return found[0]
+    return None
+
+
 def parse(text: str, workspace, today: date) -> list[dict]:
     """→ [{"title", "notes", "done", "priority", "tags", "project", "date"}]; "date" is ... when the line has none."""
     priorities = list(Tag.objects.filter(workspace=workspace, group__kind=TagGroup.Kind.PRIORITY))
@@ -66,6 +80,9 @@ def parse(text: str, workspace, today: date) -> list[dict]:
         Tag.objects.filter(workspace=workspace).filter(Q(group__isnull=True) | Q(group__kind=TagGroup.Kind.CUSTOM))
     )
     projects = list(workspace.projects.filter(archived=False))
+    from accounts.models import User
+
+    members = list(User.objects.filter(memberships__workspace=workspace, is_bot=False))
     lines = (text or "").replace("\t", "  ").splitlines()
     indents = [len(l) - len(l.lstrip()) for l in lines if l.strip()]
     base = min(indents) if indents else 0
@@ -84,7 +101,7 @@ def parse(text: str, workspace, today: date) -> list[dict]:
                 last["notes"] = (last["notes"] + "\n" if last["notes"] else "") + line
             continue
         draft = {"title": "", "notes": "", "done": False, "priority": None, "tags": [], "project": None, "date": ...,
-                 "estimate": None, "checklist": []}
+                 "estimate": None, "checklist": [], "assignee": None}
         box = CHECKBOX.match(line)
         if box:
             draft["done"] = box.group(1).lower() == "x"
@@ -95,6 +112,11 @@ def parse(text: str, workspace, today: date) -> list[dict]:
             if value and sigil == "~" and parse_estimate(word):
                 draft["estimate"] = parse_estimate(word)
                 continue
+            if value and sigil == "=":
+                member = find_member(members, value)
+                if member:
+                    draft["assignee"] = member
+                    continue
             if value and sigil == "!":
                 p = next((t for t in priorities if t.name.lower().startswith(value.lower())), None)
                 if p:
@@ -160,7 +182,7 @@ def create_from_text(user, workspace, text: str, today: date, default_date=...):
     for d in drafts:
         when = fallback if d["date"] is ... else d["date"]
         item = {
-            "title": d["title"], "description": d["notes"], "assignee": user.id,
+            "title": d["title"], "description": d["notes"], "assignee": d["assignee"].id if d.get("assignee") else user.id,
             "planned_date": when.isoformat() if when else None,
             "project": d["project"].id if d["project"] else None,
             "priority": d["priority"].id if d["priority"] else None,

@@ -104,7 +104,7 @@ class TemplateViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
         for d in parse(template.body, self.workspace, start):
             when = start if d["date"] is ... else d["date"]
             payloads.append({
-                "title": d["title"], "description": d["notes"], "assignee": assignee,
+                "title": d["title"], "description": d["notes"], "assignee": d["assignee"].id if d.get("assignee") else assignee,
                 "planned_date": when.isoformat() if when else None,
                 "project": d["project"].id if d["project"] else project,
                 "priority": d["priority"].id if d["priority"] else None,
