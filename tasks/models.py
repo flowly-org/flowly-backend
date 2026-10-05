@@ -179,6 +179,7 @@ class Comment(models.Model):
         GITHUB = "github", "GitHub"
         AI = "ai", "AI delegation"
         DONETICK = "donetick", "Donetick"
+        IMPORT = "import", "Imported"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(

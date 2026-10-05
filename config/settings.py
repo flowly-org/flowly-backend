@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "delegation",
     "wiki",
     "donetick",
+    "imports",
 ]
 
 MIDDLEWARE = [
