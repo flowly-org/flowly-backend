@@ -7,11 +7,11 @@ from .base import Connector
 
 REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
 SAFE_RE = re.compile(r"^[\w./ -]*$")
-SOURCES = ("github_wiki", "github_repo", "git")
+SOURCES = ("github_wiki", "github_repo", "git", "mediawiki")
 
 
 class Wiki(Connector):
-    """An external wiki (for now a GitHub wiki, a docs folder of a repository, or any https git repository), synced
+    """An external wiki (a GitHub wiki, a docs folder of a repository, any https git repository, or a MediaWiki), synced
     as text so Flo and the delegation agent can use it as context. Opt-in, per workspace or project."""
 
     kind = "wiki"
@@ -22,6 +22,24 @@ class Wiki(Connector):
         if source not in SOURCES:
             raise serializers.ValidationError({"source": f"Use one of: {', '.join(SOURCES)}."})
         out = {"source": source}
+        if source == "mediawiki":
+            url = (config.get("url") or "").strip().rstrip("/")
+            if not url.startswith(("https://", "http://")) or " " in url:
+                raise serializers.ValidationError({"url": "Enter the wiki's address, e.g. https://wiki.example.org."})
+            out["url"] = url[:400]
+            category = (config.get("category") or "").strip()
+            if category:
+                out["category"] = category[:200]
+            try:
+                namespace = int(config.get("namespace") or 0)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({"namespace": "Use a namespace number (0 = main pages)."}) from None
+            if namespace:
+                out["namespace"] = namespace
+            username = (config.get("username") or "").strip()
+            if username:
+                out["username"] = username[:200]
+            return out
         if source == "git":
             url = (config.get("url") or "").strip()
             if not url.startswith("https://") or " " in url:

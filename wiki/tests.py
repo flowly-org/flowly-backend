@@ -137,3 +137,88 @@ class WikiTests(APITestCase):
         self.assertIn("Event checklist", agent_tools[0]["content"])
         self.assertIn("Caffè Nero", agent_tools[1]["content"])
         self.assertIn("conventions", llm.calls[1]["messages"][0]["content"])
+
+
+class FakeMediaWiki:
+    """api.php at /w/api.php (not at the root), a bot password, and two batches of pages."""
+
+    def __init__(self):
+        self.logged_in = False
+        self.calls = []
+
+    def response(self, data=None, status=200):
+        res = mock.Mock(status_code=status)
+        res.json.return_value = data
+        return res
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append(("GET", url, params))
+        if url != "https://wiki.example.org/w/api.php":
+            return self.response(status=404)
+        if params.get("meta") == "siteinfo":
+            return self.response({"query": {"general": {"server": "https://wiki.example.org", "articlepath": "/wiki/$1"}}})
+        if params.get("meta") == "tokens":
+            return self.response({"query": {"tokens": {"logintoken": "tok+\\\\"}}})
+        if not self.logged_in:
+            return self.response({"error": {"code": "readapidenied", "info": "You need read permission to use this module."}})
+        assert params["gcmtitle"] == "Category:Mensa"
+        if "gcmcontinue" not in params:
+            return self.response({"continue": {"gcmcontinue": "page|2", "continue": "gcmcontinue||"}, "query": {"pages": [
+                {"pageid": 11, "title": "Opening hours", "revisions": [{"revid": 5, "slots": {"main": {"content":
+                    "== Kitchen ==\nThe kitchen opens at '''7:30'''. See [[Suppliers|our suppliers]].{{Navbox}}<ref>note</ref>"}}}]},
+            ]}})
+        return self.response({"query": {"pages": [
+            {"pageid": 12, "title": "Suppliers", "revisions": [{"revid": 9, "slots": {"main": {"content":
+                "Vegetables: [https://farm.example Farm Rossi], call before 10.\n[[Category:Mensa]]"}}}]},
+        ]}})
+
+    def post(self, url, data=None, timeout=None):
+        self.calls.append(("POST", url, data))
+        ok = data["lgname"] == "Flowly@sync" and data["lgpassword"] == "botpass"
+        self.logged_in = ok
+        return self.response({"login": {"result": "Success" if ok else "Failed", "reason": "Incorrect username or password."}})
+
+
+class MediaWikiTests(APITestCase):
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "mw@example.com", "password": "s3cure-Passw0rd", "full_name": "M"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="mw@example.com")
+        self.ws = self.client.get("/api/workspaces/").data[0]["id"]
+
+    def test_mediawiki_category_with_bot_password(self):
+        res = self.client.post(f"/api/workspaces/{self.ws}/integrations/", {
+            "kind": "wiki", "name": "Mensa wiki", "api_key": "botpass",
+            "config": {"source": "mediawiki", "url": "https://wiki.example.org/wiki/Main_Page", "category": "Mensa", "username": "Flowly@sync",
+                       "repo": "ignored"},
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["config"], {"source": "mediawiki", "url": "https://wiki.example.org/wiki/Main_Page",
+                                              "category": "Mensa", "username": "Flowly@sync"})
+        wiki = FakeMediaWiki()
+        with mock.patch("wiki.mediawiki.requests.Session.get", side_effect=wiki.get), \
+                mock.patch("wiki.mediawiki.requests.Session.post", side_effect=wiki.post), \
+                mock.patch("wiki.mediawiki.ensure_public_url"):
+            out = self.client.post(f"/api/workspaces/{self.ws}/integrations/{res.data['id']}/test/").data
+        self.assertEqual(out["status"], "success", out)
+        self.assertIn("Synced 2 page(s)", out["response_body"])
+        pages = {p.title: p for p in WikiPage.objects.all()}
+        self.assertEqual(pages["Opening hours"].url, "https://wiki.example.org/wiki/Opening_hours")
+        self.assertEqual(pages["Opening hours"].content, "## Kitchen\nThe kitchen opens at 7:30. See our suppliers.")
+        self.assertEqual(pages["Suppliers"].content, "Vegetables: Farm Rossi (https://farm.example), call before 10.")
+        self.assertEqual(wiki.calls[0][1], "https://wiki.example.org/api.php")  # discovered at /w/api.php after this one
+
+        from concierge.tools import Toolbox
+        from django.utils import timezone
+
+        self.assertIn("7:30", Toolbox(self.user, None, timezone.localdate()).run("search_wiki", '{"query": "kitchen opening"}'))
+
+        # A wrong bot password is reported.
+        self.client.patch(f"/api/workspaces/{self.ws}/integrations/{res.data['id']}/", {"api_key": "wrong"}, format="json")
+        wiki = FakeMediaWiki()
+        with mock.patch("wiki.mediawiki.requests.Session.get", side_effect=wiki.get), \
+                mock.patch("wiki.mediawiki.requests.Session.post", side_effect=wiki.post), \
+                mock.patch("wiki.mediawiki.ensure_public_url"):
+            out = self.client.post(f"/api/workspaces/{self.ws}/integrations/{res.data['id']}/test/").data
+        self.assertEqual(out["status"], "failed")
+        self.assertIn("refused the bot password", out["last_error"])

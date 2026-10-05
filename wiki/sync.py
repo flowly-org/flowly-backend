@@ -1,6 +1,7 @@
 """Fetch a wiki by cloning it (shallow) and keep its text pages in the database.
 
-Works for GitHub wikis (<repo>.wiki.git), a folder of a GitHub repository, or any public https git repository.
+Works for GitHub wikis (<repo>.wiki.git), a folder of a GitHub repository, any https git repository, or a MediaWiki
+(read through its API, see mediawiki.py).
 """
 
 import base64
@@ -114,24 +115,34 @@ def read_pages(config, root: Path) -> list[dict]:
     return pages
 
 
+def store(integration, state, pages):
+    with transaction.atomic():
+        keep = []
+        for p in pages:
+            page, _ = WikiPage.objects.update_or_create(integration=integration, path=p["path"], defaults=p)
+            keep.append(page.pk)
+        WikiPage.objects.filter(integration=integration).exclude(pk__in=keep).delete()
+    state.pages = len(pages)
+
+
 def sync(integration, force=False) -> WikiSource:
     """Refresh one wiki; raises DeliveryError (also recorded on the source) when it fails."""
     state, _ = WikiSource.objects.get_or_create(integration=integration)
     token = decrypt(integration.credentials.get("api_key", "")) if integration.credentials.get("api_key") else ""
     try:
-        with tempfile.TemporaryDirectory(prefix="flowly-wiki-") as tmp:
-            dest = os.path.join(tmp, "w")
-            commit = fetch(integration.config, token, dest)
+        if integration.config.get("source") == "mediawiki":
+            from . import mediawiki
+
+            commit, pages = mediawiki.fetch(integration.config, token)
             if commit != state.commit or force or not state.pages:
-                pages = read_pages(integration.config, Path(dest))
-                with transaction.atomic():
-                    keep = []
-                    for p in pages:
-                        page, _ = WikiPage.objects.update_or_create(integration=integration, path=p["path"], defaults=p)
-                        keep.append(page.pk)
-                    WikiPage.objects.filter(integration=integration).exclude(pk__in=keep).delete()
-                state.pages = len(pages)
-            state.commit = commit
+                store(integration, state, pages)
+        else:
+            with tempfile.TemporaryDirectory(prefix="flowly-wiki-") as tmp:
+                dest = os.path.join(tmp, "w")
+                commit = fetch(integration.config, token, dest)
+                if commit != state.commit or force or not state.pages:
+                    store(integration, state, read_pages(integration.config, Path(dest)))
+        state.commit = commit[:64]
     except DeliveryError as exc:
         state.error = str(exc)
         state.synced_at = timezone.now()
