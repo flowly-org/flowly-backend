@@ -150,6 +150,15 @@ class Toolbox:
          "parameters": {"type": "object", "properties": {
              "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
              "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
+        {"name": "block_time", "description": "Block time in the user's day for a task (time blocking). Without a start, "
+         "the first free slot of the day that fits.",
+         "parameters": {"type": "object", "required": ["task_id"], "properties": {
+             "task_id": {"type": "integer"}, "start": {"type": "string", "description": "Local YYYY-MM-DDTHH:MM, or HH:MM for today."},
+             "minutes": {"type": "integer", "description": "Default: the task's estimate, else 30."}}}},
+        {"name": "plan_day", "description": "Fit the day's tasks into the free time around meetings (time blocks from the "
+         "estimates). apply=false only proposes; apply=true creates the blocks.",
+         "parameters": {"type": "object", "properties": {
+             "day": {"type": "string", "description": "'today', 'tomorrow' or YYYY-MM-DD."}, "apply": {"type": "boolean"}}}},
         {"name": "use_template", "description": "Create the tasks of a saved task template (e.g. 'Client onboarding'), "
          "dated from a start day. Without a name, lists the templates.",
          "parameters": {"type": "object", "properties": {
@@ -453,6 +462,41 @@ class Toolbox:
         items = list(task.checklist or []) + [{"text": x, "done": False} for x in steps]
         self._save(task, {"checklist": items})
         return f"Added {len(steps)} steps to the checklist of #{task.id} “{task.title}”."
+
+    def tool_block_time(self, task_id, start="", minutes=None):
+        from datetime import datetime, timedelta
+
+        from calendars import blocks
+        from calendars.models import TimeBlock
+        from calendars.sync import user_tz
+
+        task = self._task(task_id)
+        tz = user_tz(self.user)
+        length = timedelta(minutes=int(minutes or task.estimate_minutes or blocks.DEFAULT_MINUTES))
+        if start:
+            value = str(start).strip()
+            when = datetime.fromisoformat(value[:16] if "T" in value else f"{self.today.isoformat()}T{value[:5]}")
+            when = when.replace(tzinfo=tz)
+        else:
+            fit = [s for s, e in blocks.free_slots(self.user, self.today, tz) if e - s >= length]
+            if not fit:
+                return "No free slot today is long enough: suggest another day or a shorter block."
+            when = fit[0]
+        b = TimeBlock.objects.create(user=self.user, task=task, title=task.title[:255], start=when, end=when + length)
+        return f"Blocked {b.start.astimezone(tz):%a %d %b %H:%M}–{b.end.astimezone(tz):%H:%M} for #{task.id} “{task.title}”."
+
+    def tool_plan_day(self, day="today", apply=False):
+        from calendars import blocks
+        from calendars.sync import user_tz
+
+        target = parse_day(day, self.today) or self.today
+        tz = user_tz(self.user)
+        result = blocks.plan(self.user, target, apply=bool(apply))
+        lines = [f"{p['start'].astimezone(tz):%H:%M}–{p['end'].astimezone(tz):%H:%M} #{p['task']} {p['title']}" for p in result["placed"]]
+        if result["unscheduled"]:
+            lines.append("Doesn't fit: " + ", ".join(f"#{u['task']} {u['title']} ({u['minutes']} min)" for u in result["unscheduled"]))
+        head = "Blocked:" if apply else "Proposed (not created yet; call again with apply=true):"
+        return head + "\n" + ("\n".join(lines) or "Nothing to plan.")
 
     def tool_use_template(self, name="", workspace="", start="today"):
         from tasks.models import TaskTemplate

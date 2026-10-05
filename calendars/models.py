@@ -101,3 +101,19 @@ class CalendarEvent(models.Model):
         if self.prep == self.Prep.BACKGROUND:
             return ""
         return self.auto_reason or ("manual" if self.prep == self.Prep.NEEDED else "")
+
+
+class TimeBlock(models.Model):
+    """Time set aside on a day for a task (or anything): shown on the day's timeline and in the iCal feed."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="time_blocks")
+    task = models.ForeignKey("tasks.Task", null=True, blank=True, on_delete=models.CASCADE, related_name="time_blocks")
+    title = models.CharField(max_length=255, blank=True)
+    start = models.DateTimeField(db_index=True)
+    end = models.DateTimeField()
+    #: The start reminder went out.
+    reminded = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["start", "id"]

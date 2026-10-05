@@ -49,6 +49,27 @@ def send_reminders(limit=50):
             continue  # done already, or the worker was down for long: don't remind about stale things
         where = " · ".join(filter(None, [task.workspace.name, task.project.name if task.project_id else ""]))
         notify.create(r.user, Notification.Kind.REMINDER, f"⏰ {task.title}", where, task=task)
+    send_block_starts(now)
+
+
+def send_block_starts(now=None):
+    """A time block starts: "▶ Time for …" (for people who keep block reminders on)."""
+    from django.utils import timezone
+
+    from accounts.focus import options
+    from calendars.models import TimeBlock
+    from calendars.sync import user_tz
+
+    now = now or timezone.now()
+    due = list(TimeBlock.objects.filter(reminded=False, start__lte=now, start__gt=now - timedelta(minutes=10))
+               .select_related("task__status", "user")[:100])
+    TimeBlock.objects.filter(pk__in=[b.pk for b in due]).update(reminded=True)
+    for b in due:
+        if not options(b.user).get("block_reminders", True) or (b.task_id and b.task.status.is_done):
+            continue
+        title = b.task.title if b.task_id else b.title
+        until = b.end.astimezone(user_tz(b.user)).strftime("%H:%M")
+        notify.create(b.user, Notification.Kind.REMINDER, f"▶ Time for: {title}", f"until {until}", task=b.task)
 
 
 def send_alerts(limit=20):

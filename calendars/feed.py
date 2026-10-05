@@ -72,6 +72,19 @@ def build(user) -> bytes:
                 ev.add("url", f"{base}/t/{task.ref}")
             ev.add("transp", "TRANSPARENT")  # tasks don't make you look busy
             cal.add_component(ev)
+    from .models import TimeBlock
+
+    for b in TimeBlock.objects.filter(user=user, start__gte=timezone.now() - PAST, start__lte=timezone.now() + AHEAD).select_related("task")[:2000]:
+        ev = icalendar.Event()
+        ev.add("uid", f"block-{b.id}@flowly")
+        ev.add("dtstamp", stamp)
+        ev.add("dtstart", b.start)
+        ev.add("dtend", b.end)
+        ev.add("summary", f"▶ {b.task.title if b.task_id else b.title}")
+        if base and b.task_id:
+            ev.add("url", f"{base}/t/{b.task.ref}")
+        ev.add("transp", "OPAQUE")  # blocked time is busy time
+        cal.add_component(ev)
     return cal.to_ical()
 
 

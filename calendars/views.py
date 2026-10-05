@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 
 from django.core import signing
+from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect
 from rest_framework import permissions, serializers, status
 from rest_framework.response import Response
@@ -273,3 +274,98 @@ class EventTasksView(APIView):
         event = get_object_or_404(CalendarEvent, pk=pk, user=request.user)
         event.tasks.remove(task_id)
         return Response(event_data(event, request.user, related=True))
+
+
+class BlocksView(APIView):
+    """GET ?date= → the day's blocks, busy events and working hours; POST {task?, title?, start, end | minutes}."""
+
+    def get(self, request):
+        from concierge.notify import local_today
+
+        from . import blocks
+        from .models import TimeBlock
+
+        day = _day(request.query_params.get("date"), local_today(request.user))
+        tz = sync.user_tz(request.user)
+        lo, hi = blocks.working_hours(request.user, day, tz)
+        start, end = lo.replace(hour=0, minute=0), lo.replace(hour=0, minute=0) + timedelta(days=1)
+        items = TimeBlock.objects.filter(user=request.user, start__lt=end, end__gt=start).select_related("task__status")
+        events = CalendarEvent.objects.filter(user=request.user, calendar__selected=True, all_day=False, start__lt=end, end__gt=start).select_related("calendar")
+        return Response({
+            "date": day, "day_start": lo, "day_end": hi,
+            "blocks": [blocks.block_data(b) for b in items],
+            "events": [{"id": e.id, "title": e.title, "start": e.start, "end": e.end, "color": e.calendar.color, "background": e.prep == "background"} for e in events],
+            "free": [{"start": s, "end": e} for s, e in blocks.free_slots(request.user, day, tz, from_now=False)],
+        })
+
+    def post(self, request):
+        from django.utils.dateparse import parse_datetime
+
+        from tasks.access import member_visible_q
+        from tasks.models import Task
+
+        from . import blocks
+        from .models import TimeBlock
+
+        start = parse_datetime(str(request.data.get("start") or ""))
+        if start is None:
+            return Response({"detail": "Give the start, e.g. 2026-10-06T10:00."}, status=400)
+        if timezone.is_naive(start):
+            start = start.replace(tzinfo=sync.user_tz(request.user))
+        end = parse_datetime(str(request.data.get("end") or "")) if request.data.get("end") else None
+        task = None
+        if request.data.get("task"):
+            task = (Task.objects.filter(workspace__memberships__user=request.user).filter(member_visible_q(request.user))
+                    .filter(pk=request.data["task"]).first())
+            if task is None:
+                return Response({"detail": "Task not found."}, status=404)
+        if end is None:
+            minutes = int(request.data.get("minutes") or (task.estimate_minutes if task else 0) or blocks.DEFAULT_MINUTES)
+            end = start + timedelta(minutes=max(5, min(minutes, 12 * 60)))
+        elif timezone.is_naive(end):
+            end = end.replace(tzinfo=start.tzinfo)
+        if end <= start or end - start > timedelta(hours=12):
+            return Response({"detail": "A block lasts between 5 minutes and 12 hours."}, status=400)
+        title = str(request.data.get("title") or (task.title if task else "")).strip()[:255]
+        if not title:
+            return Response({"detail": "Give the block a task or a title."}, status=400)
+        b = TimeBlock.objects.create(user=request.user, task=task, title=title, start=start, end=end)
+        return Response(blocks.block_data(b), status=201)
+
+
+class BlockView(APIView):
+    def patch(self, request, pk):
+        from django.utils.dateparse import parse_datetime
+
+        from . import blocks
+        from .models import TimeBlock
+
+        b = get_object_or_404(TimeBlock, pk=pk, user=request.user)
+        start = parse_datetime(str(request.data.get("start") or "")) if request.data.get("start") else b.start
+        end = parse_datetime(str(request.data.get("end") or "")) if request.data.get("end") else None
+        if end is None:
+            end = start + (b.end - b.start)  # moved: keep the length
+        if end <= start or end - start > timedelta(hours=12):
+            return Response({"detail": "A block lasts between 5 minutes and 12 hours."}, status=400)
+        b.start, b.end, b.reminded = start, end, b.reminded and start == b.start
+        b.save()
+        return Response(blocks.block_data(b))
+
+    def delete(self, request, pk):
+        from .models import TimeBlock
+
+        get_object_or_404(TimeBlock, pk=pk, user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class PlanDayView(APIView):
+    """POST {date, apply} → fit the day's tasks into the free time (apply=true creates the blocks)."""
+
+    def post(self, request):
+        from concierge.notify import local_today
+
+        from . import blocks
+
+        day = _day(request.data.get("date"), local_today(request.user))
+        result = blocks.plan(request.user, day, apply=bool(request.data.get("apply")))
+        return Response(result)

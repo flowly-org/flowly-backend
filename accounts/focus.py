@@ -15,6 +15,11 @@ DEFAULTS = {
     "calm": False,
     #: Working minutes in a day, for the day's load (estimates vs. free time). Not ADHD-specific.
     "capacity_minutes": 480,
+    #: Working hours, for time blocking (free slots, auto-plan). Not ADHD-specific.
+    "day_start": "09:00",
+    "day_end": "18:00",
+    #: A notification when a time block starts.
+    "block_reminders": True,
 }
 LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120), "capacity_minutes": (30, 1440)}
 
@@ -30,6 +35,13 @@ def clean(value) -> dict:
         if isinstance(default, bool):
             out[key] = bool(v)
             continue
+        if isinstance(default, str):
+            import re
+
+            if not isinstance(v, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+                raise ValueError(f"{key} must be a time like 09:00.")
+            out[key] = v
+            continue
         try:
             v = int(v)
         except (TypeError, ValueError):
@@ -38,6 +50,8 @@ def clean(value) -> dict:
         if not low <= v <= high:
             raise ValueError(f"{key} must be between {low} and {high}.")
         out[key] = v
+    if "day_start" in out and "day_end" in out and out["day_start"] >= out["day_end"]:
+        raise ValueError("The working day must end after it starts.")
     return out
 
 
