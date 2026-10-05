@@ -92,7 +92,24 @@ def system_prompt(user, now: datetime) -> str:
         f"forget):\n{memory}"
         + (f"\nWhat their activity shows:\n{observed}" if observed else "")
         + (f"\n{focus.prompt(user)}" if focus.active(user) else "")
+        + _standup_hint(user, now)
     )
+
+
+def _standup_hint(user, now) -> str:
+    """Tell Flo when a standup is waiting for this person's answer today."""
+    try:
+        from agile.models import StandupEntry, StandupRound
+
+        rounds = StandupRound.objects.filter(date=now.date(), asked_at__isnull=False, summarised_at__isnull=True,
+                                             setup__workspace__memberships__user=user).select_related("setup__workspace", "setup__project")
+        open_ = [r.setup.label for r in rounds if not StandupEntry.objects.filter(user=user, date=now.date(), sprint__setup=r.setup).exists()]
+    except Exception:
+        return ""
+    if not open_:
+        return ""
+    return (f"\nToday's standup is waiting for the user's update ({', '.join(open_)}): if their message is that update, or "
+            "'ok' to keep the draft from their tasks, call post_standup.")
 
 
 def run(user, messages, *, tools=True, max_tokens=2500, channel="web", outbox=None) -> str:

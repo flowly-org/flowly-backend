@@ -155,6 +155,8 @@ class Task(models.Model):
     recurrence = models.JSONField(null=True, blank=True)
     #: Occurrences of one recurring task share this id.
     series = models.CharField(max_length=16, blank=True, db_index=True)
+    #: Agile rituals (opt-in): the sprint the task is committed to.
+    sprint = models.ForeignKey("agile.Sprint", null=True, blank=True, on_delete=models.SET_NULL, related_name="tasks")
     position = models.FloatField(default=0, help_text="Sort key within a board cell.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

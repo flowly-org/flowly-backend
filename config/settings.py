@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "donetick",
     "imports",
     "insights",
+    "agile",
 ]
 
 MIDDLEWARE = [

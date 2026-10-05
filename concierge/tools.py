@@ -168,6 +168,12 @@ class Toolbox:
         {"name": "my_week", "description": "Numbers of the user's week (done, time by project, what's slipping, next week's "
          "load), for 'how was my week' and planning questions. week: any date in it (default this week).",
          "parameters": {"type": "object", "properties": {"week": {"type": "string"}}}},
+        {"name": "post_standup", "description": "Post the user's daily standup for a team with agile rituals (after they "
+         "were asked). keep_draft=true posts the draft built from their tasks; otherwise give yesterday/today/blockers.",
+         "parameters": {"type": "object", "properties": {
+             "team": {"type": "string", "description": "Workspace or project name (optional when there's one)."},
+             "yesterday": {"type": "string"}, "today": {"type": "string"}, "blockers": {"type": "string"},
+             "keep_draft": {"type": "boolean"}}}},
         {"name": "use_template", "description": "Create the tasks of a saved task template (e.g. 'Client onboarding'), "
          "dated from a start day. Without a name, lists the templates.",
          "parameters": {"type": "object", "properties": {
@@ -523,6 +529,25 @@ class Toolbox:
         s = week_numbers(self.user, monday(day), user_tz(self.user), self.today)
         slip = "; ".join(f"#{x['id']} {x['title']}" for x in s["slipping"][:8])
         return plain_text(self.user, s) + (f"\nSlipping: {slip}" if slip else "")
+
+    def tool_post_standup(self, team="", yesterday="", today="", blockers="", keep_draft=False):
+        from agile import services
+        from agile.models import AgileSetup
+
+        setups = [s for s in AgileSetup.objects.filter(enabled=True, standup=True, workspace__in=self._workspaces()).select_related("workspace", "project")]
+        if team:
+            setups = [s for s in setups if team.lower() in s.label.lower()] or setups
+        if not setups:
+            return "No team with standups (agile rituals) in your workspaces."
+        if len(setups) > 1 and not team:
+            return "Which team? " + ", ".join(s.label for s in setups)
+        setup = setups[0]
+        day = services.local_now(setup).date()
+        if keep_draft:
+            d = services.draft(setup, self.user, day)
+            yesterday, today, blockers = d["yesterday"], d["today"], d["blockers"]
+        services.save_standup(setup, self.user, day, yesterday, today, blockers)
+        return f"Standup posted for {setup.label}."
 
     def tool_use_template(self, name="", workspace="", start="today"):
         from tasks.models import TaskTemplate

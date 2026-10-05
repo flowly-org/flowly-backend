@@ -11,6 +11,7 @@ from delegation.engine import process as delegation_process
 from integrations.worker import process_due
 from wiki.sync import tick as wiki_tick
 from donetick.engine import tick as donetick_tick
+from agile.jobs import tick as agile_tick
 
 
 class Command(BaseCommand):
@@ -38,6 +39,7 @@ class Command(BaseCommand):
             payments_tick()
             wiki_tick()
             done += donetick_tick()
+            agile_tick()
             done += delegation_process()
             if once:
                 break

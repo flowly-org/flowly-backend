@@ -176,13 +176,14 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "estimate_minutes",
             "recurrence",
             "series",
+            "sprint",
             "blocked_by",
             "blocking",
             "blocked",
             "comment_count",
             "attachment_count",
         ]
-        read_only_fields = ["id", "ref", "workspace", "created_by", "created_at", "updated_at", "completed_at", "series"]
+        read_only_fields = ["id", "ref", "workspace", "created_by", "created_at", "updated_at", "completed_at", "series", "sprint"]
 
     def get_comment_count(self, obj):
         value = getattr(obj, "comment_count", None)
