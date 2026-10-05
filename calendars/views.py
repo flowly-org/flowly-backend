@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from instance import conf
 from integrations.http import DeliveryError
 
-from . import google, prep, services, sync
+from . import google, microsoft, prep, providers, services, sync
 from .models import Calendar, CalendarAccount, CalendarEvent
 
 STATE_SALT = "flowly.calendar.google"
@@ -18,6 +18,7 @@ STATE_SALT = "flowly.calendar.google"
 def account_data(account):
     return {
         "id": account.id, "provider": account.provider, "email": account.email, "status": account.status,
+        "label": account.email or account.username or account.server_url,
         "last_error": account.last_error, "last_synced_at": account.last_synced_at,
         "calendars": [
             {"id": c.id, "name": c.name, "color": c.color, "primary": c.primary, "selected": c.selected}
@@ -54,6 +55,7 @@ class CalendarOverviewView(APIView):
         accounts = request.user.calendar_accounts.prefetch_related("calendars").order_by("created_at")
         return Response({
             "available": google.enabled(),
+            "providers": {"google": google.enabled(), "microsoft": microsoft.enabled(), "caldav": True, "ics": True},
             "home_location": request.user.home_location,
             "accounts": [account_data(a) for a in accounts],
         })
@@ -99,6 +101,94 @@ class GoogleCallbackView(APIView):
         return redirect(f"{back}?calendar=connected#calendars")
 
 
+MS_SALT = "flowly.calendar.microsoft"
+
+
+class MicrosoftConnectView(APIView):
+    """POST → {"url": Microsoft sign-in URL} (Outlook.com and Microsoft 365 accounts)."""
+
+    def post(self, request):
+        if not microsoft.enabled():
+            return Response({"detail": "Microsoft calendars aren't configured on this server."}, status=400)
+        return Response({"url": microsoft.auth_url(signing.dumps({"u": request.user.id}, salt=MS_SALT))})
+
+
+class MicrosoftCallbackView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        back = f"{conf.get('PUBLIC_URL')}/settings"
+        if request.query_params.get("error"):
+            return redirect(f"{back}?calendar=cancelled#calendars")
+        try:
+            state = signing.loads(request.query_params.get("state", ""), salt=MS_SALT, max_age=900)
+            tokens = microsoft.exchange_code(request.query_params.get("code", ""))
+        except (signing.BadSignature, DeliveryError, KeyError, ValueError):
+            return redirect(f"{back}?calendar=error#calendars")
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.filter(pk=state["u"], is_active=True).first()
+        if user is None:
+            return redirect(f"{back}?calendar=error#calendars")
+        account, _ = CalendarAccount.objects.get_or_create(user=user, provider=CalendarAccount.Provider.MICROSOFT, email=tokens.get("email", ""))
+        microsoft.store_tokens(account, tokens)
+        account.status, account.last_error = CalendarAccount.Status.OK, ""
+        account.save()
+        sync.sync_account(account)
+        return redirect(f"{back}?calendar=connected#calendars")
+
+
+class CalDavAddView(APIView):
+    """POST {"server_url", "username", "password"} → checks the login, finds the calendars, connects them."""
+
+    def post(self, request):
+        from integrations.crypto import encrypt
+
+        from .caldav import Client
+
+        url = str(request.data.get("server_url") or "").strip()
+        username = str(request.data.get("username") or "").strip()
+        password = str(request.data.get("password") or "")
+        if not url.startswith(("https://", "http://")) or not username or not password:
+            return Response({"detail": "Enter the server address, your username and an (app) password."}, status=400)
+        try:
+            found = Client(url, username, password).discover()
+        except DeliveryError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        account, _ = CalendarAccount.objects.get_or_create(user=request.user, provider=CalendarAccount.Provider.CALDAV,
+                                                           server_url=url[:500], username=username[:200], email="")
+        account.refresh_token = encrypt(password)
+        account.status, account.last_error = CalendarAccount.Status.OK, ""
+        account.save()
+        sync.sync_account(account)
+        account.refresh_from_db()
+        return Response({**account_data(account), "found": len(found)}, status=201)
+
+
+class IcsAddView(APIView):
+    """POST {"url", "name"} → subscribe to an iCal (.ics / webcal://) link, read-only."""
+
+    def post(self, request):
+        url = str(request.data.get("url") or "").strip().replace("webcal://", "https://", 1)
+        name = str(request.data.get("name") or "").strip()[:200]
+        if not url.startswith(("https://", "http://")):
+            return Response({"detail": "Paste the calendar's iCal address (https://… or webcal://…)."}, status=400)
+        try:
+            providers.fetch_feed(url)
+        except DeliveryError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        account, _ = CalendarAccount.objects.get_or_create(user=request.user, provider=CalendarAccount.Provider.ICS,
+                                                           server_url=url[:500], email="", defaults={"username": name or "iCal"})
+        if name:
+            account.username = name
+        account.status, account.last_error = CalendarAccount.Status.OK, ""
+        account.save()
+        sync.sync_account(account)
+        account.refresh_from_db()
+        return Response(account_data(account), status=201)
+
+
 class AccountView(APIView):
     def post(self, request, pk):
         """Sync now."""
@@ -110,7 +200,8 @@ class AccountView(APIView):
 
     def delete(self, request, pk):
         account = get_object_or_404(CalendarAccount, pk=pk, user=request.user)
-        google.revoke(account)
+        if account.provider == "google":
+            google.revoke(account)
         account.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

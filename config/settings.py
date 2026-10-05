@@ -177,6 +177,7 @@ STRIPE_AUTOMATIC_TAX = os.environ.get("STRIPE_AUTOMATIC_TAX", "1") == "1"
 SLACK_CLIENT_SECRET = os.environ.get("SLACK_CLIENT_SECRET", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 MICROSOFT_CLIENT_ID = os.environ.get("MICROSOFT_CLIENT_ID", "")
+MICROSOFT_CLIENT_SECRET = os.environ.get("MICROSOFT_CLIENT_SECRET", "")
 
 # LLM: the platform OpenRouter key serves Pro users; workspaces can bring their own provider.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")

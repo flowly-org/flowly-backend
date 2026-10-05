@@ -1,4 +1,4 @@
-"""Mirror the user's selected Google calendars into CalendarEvent for a rolling window."""
+"""Mirror the user's selected calendars (Google, Microsoft, CalDAV, iCal links) into CalendarEvent for a rolling window."""
 
 import logging
 import time
@@ -6,12 +6,13 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from integrations.http import DeliveryError
 
-from . import google, prep
+from . import google, prep, providers
 from .models import Calendar, CalendarAccount, CalendarEvent
 
 log = logging.getLogger("flowly.calendars")
@@ -85,19 +86,15 @@ def reclassify(user):
 
 def sync_calendars(account: CalendarAccount):
     seen = []
-    for item in google.calendars(account):
+    for item in providers.calendars(account):
         cal, created = Calendar.objects.get_or_create(
-            account=account, external_id=item["id"],
-            defaults={
-                "name": item.get("summaryOverride") or item.get("summary") or item["id"],
-                "primary": bool(item.get("primary")),
-                # Your own calendars by default; holidays, birthdays and others' calendars are opt-in.
-                "selected": bool(item.get("primary")) or item.get("accessRole") == "owner",
-            },
+            account=account, external_id=item["id"][:255],
+            # Your own calendars by default; holidays, birthdays and others' calendars are opt-in.
+            defaults={"name": item["name"][:255], "primary": item["primary"], "selected": item["primary"] or item["mine"]},
         )
-        cal.name = (item.get("summaryOverride") or item.get("summary") or item["id"])[:255]
-        cal.color = item.get("backgroundColor", "")[:20]
-        cal.primary = bool(item.get("primary"))
+        cal.name = item["name"][:255]
+        cal.color = (item.get("color") or "")[:20]
+        cal.primary = item["primary"]
         cal.save()
         seen.append(cal.pk)
     account.calendars.exclude(pk__in=seen).delete()
@@ -113,15 +110,12 @@ def sync_account(account: CalendarAccount) -> int:
     try:
         sync_calendars(account)
         for cal in account.calendars.filter(selected=True):
-            items = google.events(account, cal.external_id, lo, hi)
+            items = providers.events(account, cal.external_id, lo, hi, tz)
             with transaction.atomic():
                 kept = []
-                for item in items:
-                    values = parse_event(item, tz)
-                    if values is None:
-                        continue
+                for external_id, values in items:
                     event, _ = CalendarEvent.objects.update_or_create(
-                        calendar=cal, external_id=item["id"][:255], defaults={**values, "user": user}
+                        calendar=cal, external_id=external_id[:255], defaults={**values, "user": user}
                     )
                     classify(event, user.home_location)
                     event.save(update_fields=["auto_reason"])
@@ -148,12 +142,12 @@ def sync_account(account: CalendarAccount) -> int:
 def tick():
     """Called from the worker loop: sync accounts that are due, a few at a time."""
     global _last_check
-    if time.monotonic() - _last_check < 30 or not google.enabled():
+    if time.monotonic() - _last_check < 30:
         return
     _last_check = time.monotonic()
-    due = CalendarAccount.objects.filter(status=CalendarAccount.Status.OK).filter(
-        last_synced_at__lt=timezone.now() - EVERY
-    ) | CalendarAccount.objects.filter(status=CalendarAccount.Status.OK, last_synced_at__isnull=True)
+    live = [p for p in CalendarAccount.Provider.values if providers.enabled(p)]
+    due = CalendarAccount.objects.filter(status=CalendarAccount.Status.OK, provider__in=live).filter(
+        Q(last_synced_at__lt=timezone.now() - EVERY) | Q(last_synced_at__isnull=True))
     for account in due.select_related("user").order_by("last_synced_at")[:3]:
         try:
             sync_account(account)

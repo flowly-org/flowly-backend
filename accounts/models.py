@@ -52,6 +52,8 @@ class User(AbstractUser):
     adhd_mode = models.BooleanField(default=False)
     #: ADHD mode options (see accounts.focus.DEFAULTS).
     focus = models.JSONField(default=dict, blank=True)
+    #: Secret of the personal iCal feed of tasks (/api/ical/<token>.ics); empty = off.
+    ical_token = models.CharField(max_length=64, blank=True, db_index=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []

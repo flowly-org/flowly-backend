@@ -1,4 +1,4 @@
-"""External calendars (Google for now) mirrored as read-only background for a user's days.
+"""External calendars (Google, Microsoft 365, CalDAV, iCal links) mirrored as read-only background for a user's days.
 
 Events are not tasks. Most are just context; a few need preparation (tickets, travel, a trip away from
 home). Those are flagged by `prep.classify` and checked by the concierge in the morning brief.
@@ -11,6 +11,9 @@ from django.db import models
 class CalendarAccount(models.Model):
     class Provider(models.TextChoices):
         GOOGLE = "google", "Google Calendar"
+        MICROSOFT = "microsoft", "Outlook / Microsoft 365"
+        CALDAV = "caldav", "CalDAV"
+        ICS = "ics", "iCal link"
 
     class Status(models.TextChoices):
         OK = "ok", "Connected"
@@ -19,6 +22,10 @@ class CalendarAccount(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="calendar_accounts")
     provider = models.CharField(max_length=20, choices=Provider.choices, default=Provider.GOOGLE)
     email = models.EmailField(blank=True)
+    #: CalDAV: the server (or calendar) address; iCal link: the feed address.
+    server_url = models.CharField(max_length=500, blank=True)
+    #: CalDAV login (the password, encrypted, is kept in refresh_token).
+    username = models.CharField(max_length=200, blank=True)
     #: Encrypted with integrations.crypto.
     refresh_token = models.TextField(blank=True)
     access_token = models.TextField(blank=True)
@@ -29,10 +36,10 @@ class CalendarAccount(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["user", "provider", "email"], name="unique_calendar_account")]
+        constraints = [models.UniqueConstraint(fields=["user", "provider", "email", "server_url", "username"], name="unique_calendar_account_v2")]
 
     def __str__(self):
-        return f"{self.get_provider_display()} {self.email}"
+        return f"{self.get_provider_display()} {self.email or self.username or self.server_url}"
 
 
 class Calendar(models.Model):
