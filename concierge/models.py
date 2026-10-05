@@ -19,6 +19,9 @@ class ConciergeProfile(models.Model):
     morning_brief = models.BooleanField(default=True)
     alerts = models.BooleanField(default=True, help_text="Send urgent changes to Telegram.")
     last_brief_on = models.DateField(null=True, blank=True)
+    #: Weekly review: "fri", "sun" or "off", at review_time (local).
+    review_day = models.CharField(max_length=3, default="fri")
+    review_time = models.TimeField(default=time(16, 0))
     #: How it talks: a key of concierge.personality.PERSONALITIES.
     personality = models.CharField(max_length=20, default="friendly")
     #: Long-term notes the assistant keeps about the user ("remember that…", and what it learns).

@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "wiki",
     "donetick",
     "imports",
+    "insights",
 ]
 
 MIDDLEWARE = [

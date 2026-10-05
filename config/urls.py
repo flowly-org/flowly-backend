@@ -56,6 +56,7 @@ urlpatterns = [
     path("api/my/context/", MyContextView.as_view(), name="my-context"),
     path("api/", include("workspaces.urls")),
     path("api/", include("donetick.urls")),
+    path("api/", include("insights.urls")),
     path("api/", include("integrations.urls")),
     path("api/", include("concierge.urls")),
     path("api/", include("calendars.urls")),

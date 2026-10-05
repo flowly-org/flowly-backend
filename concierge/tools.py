@@ -159,6 +159,9 @@ class Toolbox:
          "estimates). apply=false only proposes; apply=true creates the blocks.",
          "parameters": {"type": "object", "properties": {
              "day": {"type": "string", "description": "'today', 'tomorrow' or YYYY-MM-DD."}, "apply": {"type": "boolean"}}}},
+        {"name": "my_week", "description": "Numbers of the user's week (done, time by project, what's slipping, next week's "
+         "load), for 'how was my week' and planning questions. week: any date in it (default this week).",
+         "parameters": {"type": "object", "properties": {"week": {"type": "string"}}}},
         {"name": "use_template", "description": "Create the tasks of a saved task template (e.g. 'Client onboarding'), "
          "dated from a start day. Without a name, lists the templates.",
          "parameters": {"type": "object", "properties": {
@@ -497,6 +500,16 @@ class Toolbox:
             lines.append("Doesn't fit: " + ", ".join(f"#{u['task']} {u['title']} ({u['minutes']} min)" for u in result["unscheduled"]))
         head = "Blocked:" if apply else "Proposed (not created yet; call again with apply=true):"
         return head + "\n" + ("\n".join(lines) or "Nothing to plan.")
+
+    def tool_my_week(self, week=""):
+        from calendars.sync import user_tz
+        from insights.review import plain_text, week_numbers
+        from insights.stats import monday
+
+        day = parse_day(week or "today", self.today) or self.today
+        s = week_numbers(self.user, monday(day), user_tz(self.user), self.today)
+        slip = "; ".join(f"#{x['id']} {x['title']}" for x in s["slipping"][:8])
+        return plain_text(self.user, s) + (f"\nSlipping: {slip}" if slip else "")
 
     def tool_use_template(self, name="", workspace="", start="today"):
         from tasks.models import TaskTemplate

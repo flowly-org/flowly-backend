@@ -17,7 +17,7 @@ _last_brief_check = 0.0
 def tick():
     from . import focus
 
-    for job in (team_jobs, team_briefs, reflections, focus.tick, send_reminders):
+    for job in (team_jobs, team_briefs, reflections, focus.tick, send_reminders, weekly_reviews):
         try:
             job()
         except Exception:
@@ -169,3 +169,16 @@ def reflections():
 
     for profile in due_reflections():
         reflect(profile)
+
+
+_last_review_check = 0.0
+
+
+def weekly_reviews():
+    global _last_review_check
+    if time.monotonic() - _last_review_check < 120:
+        return
+    _last_review_check = time.monotonic()
+    from insights.review import send_due
+
+    send_due()

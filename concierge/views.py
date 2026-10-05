@@ -53,6 +53,8 @@ class ConciergeSettingsSerializer(serializers.Serializer):
     language = serializers.ChoiceField(required=False, choices=list(LANGUAGES))
     timezone = serializers.CharField(required=False, max_length=64)
     brief_time = serializers.TimeField(required=False)
+    review_day = serializers.ChoiceField(required=False, choices=["fri", "sun", "off"])
+    review_time = serializers.TimeField(required=False)
     morning_brief = serializers.BooleanField(required=False)
     alerts = serializers.BooleanField(required=False)
     provider = serializers.IntegerField(required=False, allow_null=True)
@@ -107,6 +109,8 @@ class ConciergeView(APIView):
                     "language": profile.language,
                     "timezone": profile.timezone,
                     "brief_time": profile.brief_time.strftime("%H:%M"),
+                    "review_day": profile.review_day,
+                    "review_time": profile.review_time.strftime("%H:%M"),
                     "morning_brief": profile.morning_brief,
                     "alerts": profile.alerts,
                     "provider": profile.provider_id,
