@@ -32,7 +32,7 @@ def handle_update(update: dict):
     text = (message.get("text") or "").strip()
     chat_id = chat.get("id")
     image = image_of(message)
-    if not chat_id or not (text or image or message.get("caption")):
+    if not chat_id or not (text or image or message.get("caption") or message.get("voice") or message.get("audio")):
         return
     if chat.get("type") in ("group", "supergroup"):
         from . import teamchat_telegram
@@ -44,13 +44,25 @@ def handle_update(update: dict):
             return
     if chat.get("type") != "private":
         return
+    voice = message.get("voice") or message.get("audio") or (message.get("document") if str((message.get("document") or {}).get("mime_type", "")).startswith("audio/") else None)
     try:
+        if voice:
+            return _handle_voice(chat_id, voice, (message.get("caption") or "").strip())
         if image:
             return _handle_photo(chat_id, *image, (message.get("caption") or "").strip())
         _handle(chat_id, text, (message.get("from") or {}).get("username", ""))
     except Exception:
         log.exception("Telegram update failed")
         telegram.send_message(chat_id, "Sorry, something went wrong on my side.")
+
+
+def _handle_voice(chat_id, voice, caption):
+    from .voice import handle
+
+    profile = ConciergeProfile.objects.filter(telegram_chat_id=chat_id).select_related("user").first()
+    if profile is None:
+        return telegram.send_message(chat_id, "Hi! To connect, open Flowly → Settings → Concierge and tap “Connect Telegram”.")
+    handle(profile, chat_id, voice["file_id"], voice.get("mime_type", "audio/ogg"), int(voice.get("duration") or 0), caption)
 
 
 def _handle_photo(chat_id, file_id, mime, caption):

@@ -33,6 +33,7 @@ SPECS = [
     Spec("API_PUBLIC_URL", "General", "API URL", "Public URL of this API, e.g. https://api.flowly.net. Used for webhooks.", "url"),
     Spec("OPENROUTER_API_KEY", "AI", "OpenRouter API key", "Platform key used by Pro users' concierge.", secret=True),
     Spec("OPENROUTER_MODEL", "AI", "Default model", "An OpenRouter model id that supports tool calling."),
+    Spec("OPENROUTER_AUDIO_MODEL", "AI", "Voice model", "Model that transcribes voice messages (must accept audio). Empty = ~google/gemini-flash-latest."),
     Spec("OPENROUTER_VISION_MODEL", "AI", "Photo model", "Model that reads photos of to-do lists (must accept images). Empty = the default model."),
     Spec("OPENROUTER_BASE_URL", "AI", "OpenRouter base URL", "Change only for an OpenRouter-compatible proxy.", "url"),
     Spec("CONCIERGE_DAILY_TOKENS", "AI", "Daily tokens per user", "Cap on the platform key, per user per day.", "int"),

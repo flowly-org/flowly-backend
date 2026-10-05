@@ -15,12 +15,12 @@ LLM_NAMES = {"en": "English", "it": "Italian", "es": "Spanish", "fr": "French", 
 
 STRINGS = {
     "help": {
-        "en": "I'm {name}, your Flowly concierge. Just write to me, e.g.\n• what's on my plate today?\n• add “call the accountant” tomorrow in Personal\n• move the proposal to Friday\n• send a photo of a written list to turn it into tasks\n• start the timer on the proposal / stop the timer\n\nCommands: /today brief · /alerts_off · /alerts_on · /undo (last photo) · /forget (clear what I remember) · /apps (download the apps, e.g. /apps android) · /help",
-        "it": "Sono {name}, il tuo concierge Flowly. Scrivimi pure, ad esempio\n• cosa ho in programma oggi?\n• aggiungi “chiamare il commercialista” domani in Personal\n• sposta la proposta a venerdì\n• manda la foto di una lista scritta per trasformarla in attività\n• avvia il timer sulla proposta / ferma il timer\n\nComandi: /today riepilogo · /alerts_off · /alerts_on · /undo (ultima foto) · /forget (dimentica ciò che ricordo) · /apps (scarica le app, es. /apps android) · /help",
-        "es": "Soy {name}, tu conserje de Flowly. Escríbeme, por ejemplo\n• ¿qué tengo hoy?\n• añade “llamar al contable” mañana en Personal\n• mueve la propuesta al viernes\n• envía una foto de una lista escrita para convertirla en tareas\n• inicia el temporizador en la propuesta / para el temporizador\n\nComandos: /today resumen · /alerts_off · /alerts_on · /undo (última foto) · /forget (borrar lo que recuerdo) · /apps (descargar las apps, p. ej. /apps android) · /help",
-        "fr": "Je suis {name}, ton concierge Flowly. Écris-moi, par exemple\n• qu'est-ce que j'ai aujourd'hui ?\n• ajoute « appeler le comptable » demain dans Personal\n• déplace la proposition à vendredi\n• envoie la photo d'une liste écrite pour la transformer en tâches\n• lance le minuteur sur la proposition / arrête le minuteur\n\nCommandes : /today résumé · /alerts_off · /alerts_on · /undo (dernière photo) · /forget (oublier ce que je sais) · /apps (télécharger les apps, ex. /apps android) · /help",
-        "de": "Ich bin {name}, dein Flowly-Concierge. Schreib mir einfach, z. B.\n• was steht heute an?\n• füge „Steuerberater anrufen“ morgen in Personal hinzu\n• verschiebe das Angebot auf Freitag\n• schick ein Foto einer geschriebenen Liste, um daraus Aufgaben zu machen\n• starte den Timer für das Angebot / stoppe den Timer\n\nBefehle: /today Übersicht · /alerts_off · /alerts_on · /undo (letztes Foto) · /forget (Gemerktes löschen) · /apps (Apps herunterladen, z. B. /apps android) · /help",
-        "pt": "Sou {name}, o teu concierge Flowly. Escreve-me, por exemplo\n• o que tenho hoje?\n• adiciona “ligar ao contabilista” amanhã em Personal\n• passa a proposta para sexta\n• envia a foto de uma lista escrita para a transformar em tarefas\n• inicia o temporizador na proposta / para o temporizador\n\nComandos: /today resumo · /alerts_off · /alerts_on · /undo (última foto) · /forget (apagar o que lembro) · /apps (descarregar as apps, ex. /apps android) · /help",
+        "en": "I'm {name}, your Flowly concierge. Just write to me, e.g.\n• what's on my plate today?\n• add “call the accountant” tomorrow in Personal\n• move the proposal to Friday\n• send a photo of a written list to turn it into tasks\n• send a voice message: dictate tasks or ask anything\n• start the timer on the proposal / stop the timer\n\nCommands: /today brief · /alerts_off · /alerts_on · /undo (last photo) · /forget (clear what I remember) · /apps (download the apps, e.g. /apps android) · /help",
+        "it": "Sono {name}, il tuo concierge Flowly. Scrivimi pure, ad esempio\n• cosa ho in programma oggi?\n• aggiungi “chiamare il commercialista” domani in Personal\n• sposta la proposta a venerdì\n• manda la foto di una lista scritta per trasformarla in attività\n• manda un vocale: detta attività o chiedimi qualcosa\n• avvia il timer sulla proposta / ferma il timer\n\nComandi: /today riepilogo · /alerts_off · /alerts_on · /undo (ultima foto) · /forget (dimentica ciò che ricordo) · /apps (scarica le app, es. /apps android) · /help",
+        "es": "Soy {name}, tu conserje de Flowly. Escríbeme, por ejemplo\n• ¿qué tengo hoy?\n• añade “llamar al contable” mañana en Personal\n• mueve la propuesta al viernes\n• envía una foto de una lista escrita para convertirla en tareas\n• envía un mensaje de voz: dicta tareas o pregúntame lo que quieras\n• inicia el temporizador en la propuesta / para el temporizador\n\nComandos: /today resumen · /alerts_off · /alerts_on · /undo (última foto) · /forget (borrar lo que recuerdo) · /apps (descargar las apps, p. ej. /apps android) · /help",
+        "fr": "Je suis {name}, ton concierge Flowly. Écris-moi, par exemple\n• qu'est-ce que j'ai aujourd'hui ?\n• ajoute « appeler le comptable » demain dans Personal\n• déplace la proposition à vendredi\n• envoie la photo d'une liste écrite pour la transformer en tâches\n• envoie un message vocal : dicte des tâches ou demande-moi quelque chose\n• lance le minuteur sur la proposition / arrête le minuteur\n\nCommandes : /today résumé · /alerts_off · /alerts_on · /undo (dernière photo) · /forget (oublier ce que je sais) · /apps (télécharger les apps, ex. /apps android) · /help",
+        "de": "Ich bin {name}, dein Flowly-Concierge. Schreib mir einfach, z. B.\n• was steht heute an?\n• füge „Steuerberater anrufen“ morgen in Personal hinzu\n• verschiebe das Angebot auf Freitag\n• schick ein Foto einer geschriebenen Liste, um daraus Aufgaben zu machen\n• schick eine Sprachnachricht: diktiere Aufgaben oder frag mich etwas\n• starte den Timer für das Angebot / stoppe den Timer\n\nBefehle: /today Übersicht · /alerts_off · /alerts_on · /undo (letztes Foto) · /forget (Gemerktes löschen) · /apps (Apps herunterladen, z. B. /apps android) · /help",
+        "pt": "Sou {name}, o teu concierge Flowly. Escreve-me, por exemplo\n• o que tenho hoje?\n• adiciona “ligar ao contabilista” amanhã em Personal\n• passa a proposta para sexta\n• envia a foto de uma lista escrita para a transformar em tarefas\n• envia uma mensagem de voz: dita tarefas ou pergunta-me o que quiseres\n• inicia o temporizador na proposta / para o temporizador\n\nComandos: /today resumo · /alerts_off · /alerts_on · /undo (última foto) · /forget (apagar o que lembro) · /apps (descarregar as apps, ex. /apps android) · /help",
     },
     "connected": {
         "en": "Connected to Flowly as {user}. 🎉", "it": "Collegato a Flowly come {user}. 🎉", "es": "Conectado a Flowly como {user}. 🎉",
@@ -53,6 +53,22 @@ STRINGS = {
     "photo_reading": {
         "en": "Reading your list…", "it": "Sto leggendo la lista…", "es": "Leyendo tu lista…",
         "fr": "Je lis ta liste…", "de": "Ich lese deine Liste…", "pt": "A ler a tua lista…",
+    },
+    "voice_none": {
+        "en": "I couldn't make out any words in that voice message. Could you try again?",
+        "it": "Non sono riuscito a capire il messaggio vocale. Puoi riprovare?",
+        "es": "No he podido entender el mensaje de voz. ¿Puedes intentarlo de nuevo?",
+        "fr": "Je n'ai pas compris le message vocal. Tu peux réessayer ?",
+        "de": "Ich konnte die Sprachnachricht nicht verstehen. Versuchst du es noch einmal?",
+        "pt": "Não consegui perceber a mensagem de voz. Podes tentar outra vez?",
+    },
+    "voice_too_long": {
+        "en": "That voice message is a bit long for me: please keep it under {minutes} minutes.",
+        "it": "Il vocale è un po' lungo per me: tienilo sotto i {minutes} minuti.",
+        "es": "Ese mensaje de voz es algo largo para mí: mantenlo por debajo de {minutes} minutos.",
+        "fr": "Ce message vocal est un peu long pour moi : reste sous les {minutes} minutes.",
+        "de": "Die Sprachnachricht ist mir etwas zu lang: bitte unter {minutes} Minuten bleiben.",
+        "pt": "Essa mensagem de voz é um pouco longa para mim: mantém-na abaixo de {minutes} minutos.",
     },
     "photo_none": {
         "en": "I couldn't find any to-do items in that photo. Try a sharper one, closer to the page.",

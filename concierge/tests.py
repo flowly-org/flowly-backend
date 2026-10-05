@@ -775,3 +775,54 @@ class PersonalityMemoryTests(APITestCase):
         profile.memory_updated_at = None
         profile.save()
         self.assertEqual(due_reflections(), [])  # learning switched off
+
+
+@override_settings(OPENROUTER_API_KEY="or-key", OPENROUTER_MODEL="test/model", TELEGRAM_BOT_TOKEN="123:abc", TELEGRAM_MODE="polling")
+class VoiceMessageTests(APITestCase):
+    def setUp(self):
+        auth = self.client.post("/api/auth/register/", {"email": "v@example.com", "password": "s3cure-Passw0rd", "full_name": "V"}).data
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {auth['access']}")
+        self.user = User.objects.get(email="v@example.com")
+        self.user.plan = "pro"
+        self.user.save()
+        ConciergeProfile.objects.create(user=self.user, telegram_chat_id=555, timezone="UTC")
+
+    def voice(self, duration=12):
+        return {"update_id": 9, "message": {"chat": {"id": 555, "type": "private"}, "from": {"username": "v"},
+                "voice": {"file_id": "vf1", "duration": duration, "mime_type": "audio/ogg"}}}
+
+    def test_dictated_list_becomes_tasks(self):
+        from concierge import bot
+
+        world = FakeWorld(llm_replies=[
+            {"role": "assistant", "content": "Buy milk, call Anna tomorrow, and book the train for Friday."},
+            tool_call("add_tasks", {"lines": "Buy milk\nCall Anna @tomorrow\nBook the train @fri"}),
+            {"role": "assistant", "content": "Added 3 tasks."},
+        ])
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update(self.voice())
+        audio_call = world.llm_calls[0]["json"]
+        self.assertEqual(audio_call["model"], "~google/gemini-flash-latest")
+        part = audio_call["messages"][0]["content"][1]
+        self.assertEqual((part["type"], part["input_audio"]["format"]), ("input_audio", "ogg"))
+        users = [m["content"] for m in world.llm_calls[1]["json"]["messages"] if m["role"] == "user"]
+        self.assertIn("(voice message) Buy milk", users[-1])
+        titles = set(Task.objects.values_list("title", flat=True))
+        self.assertEqual(titles, {"Buy milk", "Call Anna", "Book the train"})
+        reply = world.sent[-1]["text"]
+        self.assertTrue(reply.startswith("🎙 “Buy milk, call Anna tomorrow"))
+        self.assertIn("Added 3 tasks.", reply)
+
+    def test_long_silent_and_free(self):
+        from concierge import bot
+
+        world = FakeWorld(llm_replies=[{"role": "assistant", "content": "NONE"}])
+        with mock.patch("integrations.http.requests.request", world):
+            bot.handle_update(self.voice(duration=900))
+            self.assertIn("under 5 minutes", world.sent[-1]["text"])
+            bot.handle_update(self.voice())
+            self.assertIn("make out any words", world.sent[-1]["text"])
+            self.user.plan = "free"
+            self.user.save()
+            bot.handle_update(self.voice())
+        self.assertIn("Pro", world.sent[-1]["text"])

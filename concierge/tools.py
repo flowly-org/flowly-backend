@@ -98,6 +98,12 @@ class Toolbox:
              "repeat": {"type": "object", "description": "Make it recurring: {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition.",
                         "properties": {"freq": {"type": "string"}, "interval": {"type": "integer"}, "weekdays": {"type": "array", "items": {"type": "integer"}}, "after_done": {"type": "boolean"}}},
              "estimate_minutes": {"type": "integer", "description": "How long it takes, in minutes."}}}},
+        {"name": "add_tasks", "description": "Create several tasks at once from a list (dictated, pasted, meeting notes). "
+         "One task per line; per line you may add !priority, +Project, #tag, @tomorrow / @fri / @YYYY-MM-DD, ~30m; "
+         "indented lines become notes, indented '[ ] item' lines checklist items. Prefer this over many create_task calls.",
+         "parameters": {"type": "object", "required": ["lines"], "properties": {
+             "lines": {"type": "string"}, "workspace": {"type": "string"},
+             "day": {"type": "string", "description": "Default day for lines without @date: 'today', 'tomorrow', 'backlog' or YYYY-MM-DD (default today)."}}}},
         {"name": "update_task", "description": "Change a task: reschedule, rename, set status or priority.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {
              "task_id": {"type": "integer"}, "title": {"type": "string"},
@@ -289,6 +295,15 @@ class Toolbox:
             data["priority"] = tag.id
         task = self._save(Task(workspace=ws), data)
         return "Created " + describe(task, self.today)
+
+    def tool_add_tasks(self, lines, workspace="", day="today"):
+        from tasks.bulk import create_from_text
+
+        ws = self._workspace(workspace)
+        created = create_from_text(self.user, ws, str(lines)[:20000], self.today, default_date=parse_day(day or "today", self.today))
+        if not created:
+            return "No tasks found in that list."
+        return f"Created {len(created)} task(s) in {ws.name}:\n" + "\n".join(describe(t, self.today) for t in created)
 
     def tool_update_task(self, task_id, title=None, day=None, status=None, priority=None, repeat=None, estimate_minutes=None):
         task = self._task(task_id)
