@@ -60,10 +60,14 @@ def ensure(setup, today):
     active = setup.sprints.filter(status=Sprint.Status.ACTIVE).first()
     if active:
         return active
-    planned = setup.sprints.filter(status=Sprint.Status.PLANNED, start__lte=today).order_by("start").first()
-    if planned:
+    planned = setup.sprints.filter(status=Sprint.Status.PLANNED).order_by("start").first()
+    if planned and (planned.start <= today or planned.start - today <= timedelta(days=7 * setup.sprint_weeks)):
+        # The next planned sprint starts now (also when the previous one was closed early).
+        planned.start = min(planned.start, today)
+        if planned.end < today:
+            planned.end = today + timedelta(days=7 * setup.sprint_weeks - 1)
         planned.status = Sprint.Status.ACTIVE
-        planned.save(update_fields=["status"])
+        planned.save(update_fields=["start", "end", "status"])
         return planned
     last = setup.sprints.order_by("-end").first()
     start = last.end + timedelta(days=1) if last and last.end >= today - timedelta(days=7 * setup.sprint_weeks) else _first_start(setup, today)
@@ -104,9 +108,7 @@ def close(sprint, now=None):
     review["velocity_minutes"] = round(sum(velocities) / len(velocities))
     sprint.review, sprint.status, sprint.closed_at = review, Sprint.Status.CLOSED, now or timezone.now()
     sprint.save()
-    if nxt.status == Sprint.Status.PLANNED and nxt.start <= local_now(setup, now).date():
-        nxt.status = Sprint.Status.ACTIVE
-        nxt.save(update_fields=["status"])
+    ensure(setup, local_now(setup, now).date())  # the next sprint starts now
     transaction.on_commit(lambda: announce_review(sprint))
     return sprint
 
