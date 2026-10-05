@@ -9,7 +9,7 @@ from mcpserver.views import McpView
 from timetracking.views import InvoicingProfileView, TimerView
 from tasks.discussion import PublicConfigView
 from tasks.sharing import SharedWithMeView, TaskLinkAttachmentView, TaskLinkCommentView, TaskLinkView
-from tasks.views import MyContextView, MyTaskListView, QuickAddView
+from tasks.views import MyContextView, DayLoadView, MyTaskListView, QuickAddView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -46,6 +46,7 @@ urlpatterns = [
     path("api/my/shared/", SharedWithMeView.as_view(), name="my-shared"),
     path("api/my/tasks/quick/", QuickAddView.as_view(), name="my-tasks-quick"),
     path("api/my/tasks/", MyTaskListView.as_view(), name="my-tasks"),
+    path("api/my/day-load/", DayLoadView.as_view(), name="my-day-load"),
     path("api/my/context/", MyContextView.as_view(), name="my-context"),
     path("api/", include("workspaces.urls")),
     path("api/", include("donetick.urls")),

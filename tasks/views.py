@@ -14,7 +14,7 @@ from workspaces.serializers import MembershipSerializer
 
 from .access import member_visible_q
 from .filters import TaskFilter
-from .models import Tag, TagGroup, Task
+from .models import Reminder, Tag, TagGroup, Task
 from .serializers import ProjectSerializer, TagGroupSerializer, TagSerializer, TaskSerializer
 
 
@@ -124,6 +124,65 @@ class TaskViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
         instance.delete()
         if before:
             emit(before, None)
+
+
+class TaskRemindersView(WorkspaceScopedMixin, APIView):
+    """GET/POST /api/workspaces/<ws>/tasks/<pk>/reminders/ — my reminders on a task; DELETE …/reminders/<id>/."""
+
+    def task(self, pk):
+        task = self.workspace.tasks.filter(member_visible_q(self.request.user)).filter(pk=pk).first()
+        if task is None:
+            from django.http import Http404
+
+            raise Http404
+        return task
+
+    @staticmethod
+    def rows(task, user):
+        return [{"id": r.id, "remind_at": r.remind_at, "sent": r.sent_at is not None}
+                for r in Reminder.objects.filter(task=task, user=user).order_by("remind_at")]
+
+    def get(self, request, workspace_pk=None, task_pk=None):
+        return Response(self.rows(self.task(task_pk), request.user))
+
+    def post(self, request, workspace_pk=None, task_pk=None):
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        task = self.task(task_pk)
+        when = parse_datetime(str(request.data.get("remind_at") or ""))
+        if when is None:
+            raise ValidationError({"remind_at": "Give a date and time, e.g. 2026-10-06T15:00."})
+        if timezone.is_naive(when):
+            from calendars.sync import user_tz
+
+            when = when.replace(tzinfo=user_tz(request.user))
+        if when < timezone.now() - timezone.timedelta(minutes=1):
+            raise ValidationError({"remind_at": "That moment has already passed."})
+        if Reminder.objects.filter(user=request.user, sent_at__isnull=True).count() >= 500:
+            raise ValidationError({"remind_at": "Too many pending reminders."})
+        Reminder.objects.get_or_create(task=task, user=request.user, remind_at=when)
+        return Response(self.rows(task, request.user), status=201)
+
+    def delete(self, request, workspace_pk=None, task_pk=None, rid=None):
+        task = self.task(task_pk)
+        Reminder.objects.filter(task=task, user=request.user, pk=rid).delete()
+        return Response(self.rows(task, request.user))
+
+
+class DayLoadView(APIView):
+    """GET /api/my/day-load/?date=YYYY-MM-DD — estimated work planned vs free time (capacity minus calendar)."""
+
+    def get(self, request):
+        from datetime import date as date_cls
+
+        from .load import day_load
+
+        try:
+            day = date_cls.fromisoformat(request.query_params.get("date", ""))
+        except ValueError:
+            day = None
+        return Response(day_load(request.user, day))
 
 
 class MyTaskListView(generics.ListAPIView):

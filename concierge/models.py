@@ -66,6 +66,7 @@ class Notification(models.Model):
         BRIEF = "brief", "Daily brief"
         SHARED = "shared", "Shared with you"
         FOCUS = "focus", "Focus nudge"
+        REMINDER = "reminder", "Reminder"
 
     class Telegram(models.TextChoices):
         NONE = "none", "Not sent"

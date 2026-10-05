@@ -146,6 +146,15 @@ class Task(models.Model):
         settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+"
     )
     tags = models.ManyToManyField(Tag, blank=True, related_name="tasks")
+    #: Tickable items: [{"id": "k3f9", "text": "Buy paint", "done": false}, …].
+    checklist = models.JSONField(default=list, blank=True)
+    #: How long it should take, in minutes (for the day's load).
+    estimate_minutes = models.PositiveIntegerField(null=True, blank=True)
+    #: Repeat rule (see tasks.recurrence): {"freq": "weekly", "interval": 1, "weekdays": [0, 3], "after_done": false,
+    #: "until": "2027-01-01"}. When the task is done, the next occurrence is created and takes the rule over.
+    recurrence = models.JSONField(null=True, blank=True)
+    #: Occurrences of one recurring task share this id.
+    series = models.CharField(max_length=16, blank=True, db_index=True)
     position = models.FloatField(default=0, help_text="Sort key within a board cell.")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -307,3 +316,16 @@ class TaskShare(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["task", "email"], name="unique_task_share")]
         ordering = ["created_at", "id"]
+
+
+class Reminder(models.Model):
+    """"Remind me at…" for one person on one task: a notification (and Telegram, push) at that moment."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="reminders")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="reminders")
+    remind_at = models.DateTimeField(db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["remind_at", "id"]

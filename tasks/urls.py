@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from .discussion import AttachmentViewSet, CommentViewSet
 from .sharing import BulkCreateView, TaskSharesView
-from .views import ProjectViewSet, TagGroupViewSet, TagViewSet, TaskViewSet
+from .views import ProjectViewSet, TagGroupViewSet, TagViewSet, TaskRemindersView, TaskViewSet
 
 router = SimpleRouter()
 router.register("projects", ProjectViewSet, basename="project")
@@ -24,6 +24,8 @@ urlpatterns = [
     path("tasks/bulk/", BulkCreateView.as_view(), name="task-bulk"),
     path("tasks/<int:task_pk>/shares/", TaskSharesView.as_view(), name="task-shares"),
     path("tasks/<int:task_pk>/shares/<int:share_id>/", TaskSharesView.as_view(), name="task-share"),
+    path("tasks/<int:task_pk>/reminders/", TaskRemindersView.as_view(), name="task-reminders"),
+    path("tasks/<int:task_pk>/reminders/<int:rid>/", TaskRemindersView.as_view(), name="task-reminder"),
     *router.urls,
     path("tasks/<int:task_pk>/", include(task_children.urls)),
 ]

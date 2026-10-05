@@ -174,6 +174,17 @@ def brief(user) -> str:
     from calendars import concierge as cal
 
     calendar = cal.brief_context(user, now.date(), now.tzinfo, toolbox._tasks())
+    try:
+        from tasks.load import day_load
+
+        load = day_load(user, now.date())
+        if load["estimated_minutes"]:
+            calendar = (calendar or "") + (
+                f"\nDay load: about {load['estimated_minutes']} min of estimated tasks ({load['unestimated']} without estimate) "
+                f"for {load['free_minutes']} free min after meetings."
+                + (" Overbooked: suggest what to move." if load["over_minutes"] else ""))
+    except Exception:
+        log.exception("Day load failed")
     calendar_text = f"\n\n{cal.BRIEF_RULES}\n{calendar}" if calendar else ""
     try:
         from delegation.engine import suggestions

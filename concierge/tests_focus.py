@@ -91,5 +91,6 @@ class AdhdModeTests(APITestCase):
         box = Toolbox(self.user, None, timezone.localdate())
         out = box.run("add_steps", f'{{"task_id": {task["id"]}, "steps": ["Find last year\'s PDF", "List receipts"]}}')
         self.assertIn("Added 2 steps", out)
-        desc = self.client.get(f"/api/workspaces/{self.ws}/tasks/{task['id']}/").data["description"]
-        self.assertEqual(desc, "2025\n\n- [ ] Find last year's PDF\n- [ ] List receipts")
+        data = self.client.get(f"/api/workspaces/{self.ws}/tasks/{task['id']}/").data
+        self.assertEqual(data["description"], "2025")
+        self.assertEqual([(i["text"], i["done"]) for i in data["checklist"]], [("Find last year's PDF", False), ("List receipts", False)])

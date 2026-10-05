@@ -13,8 +13,10 @@ DEFAULTS = {
     "celebrate": True,
     #: Less motion and fewer details on cards.
     "calm": False,
+    #: Working minutes in a day, for the day's load (estimates vs. free time). Not ADHD-specific.
+    "capacity_minutes": 480,
 }
-LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120)}
+LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120), "capacity_minutes": (30, 1440)}
 
 
 def clean(value) -> dict:

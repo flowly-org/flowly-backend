@@ -51,6 +51,15 @@ def describe(task: Task, today: date) -> str:
         bits.append(f"due={task.due_date}")
     if task.assignee_id:
         bits.append(f"assignee={task.assignee.full_name or task.assignee.email}")
+    if task.estimate_minutes:
+        bits.append(f"estimate={task.estimate_minutes}min")
+    from tasks.recurrence import describe as repeat_text, is_rule
+
+    if is_rule(task.recurrence):
+        bits.append(f"repeats {repeat_text(task.recurrence)}")
+    if task.checklist:
+        done = sum(1 for i in task.checklist if i.get("done"))
+        bits.append(f"checklist {done}/{len(task.checklist)}")
     return "; ".join(bits)
 
 
@@ -85,12 +94,18 @@ class Toolbox:
          "parameters": {"type": "object", "required": ["title"], "properties": {
              "title": {"type": "string"}, "workspace": {"type": "string"}, "project": {"type": "string"},
              "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD (default today)."},
-             "priority": {"type": "string"}, "notes": {"type": "string"}}}},
+             "priority": {"type": "string"}, "notes": {"type": "string"},
+             "repeat": {"type": "object", "description": "Make it recurring: {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition.",
+                        "properties": {"freq": {"type": "string"}, "interval": {"type": "integer"}, "weekdays": {"type": "array", "items": {"type": "integer"}}, "after_done": {"type": "boolean"}}},
+             "estimate_minutes": {"type": "integer", "description": "How long it takes, in minutes."}}}},
         {"name": "update_task", "description": "Change a task: reschedule, rename, set status or priority.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {
              "task_id": {"type": "integer"}, "title": {"type": "string"},
              "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD."},
-             "status": {"type": "string"}, "priority": {"type": "string", "description": "Priority name or 'none'."}}}},
+             "status": {"type": "string"}, "priority": {"type": "string", "description": "Priority name or 'none'."},
+             "repeat": {"type": "object", "description": "Make it recurring: {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition.",
+                        "properties": {"freq": {"type": "string"}, "interval": {"type": "integer"}, "weekdays": {"type": "array", "items": {"type": "integer"}}, "after_done": {"type": "boolean"}}},
+             "estimate_minutes": {"type": "integer", "description": "How long it takes, in minutes."}}}},
         {"name": "complete_task", "description": "Mark a task done.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
         {"name": "add_comment", "description": "Add a comment to a task's discussion.",
@@ -129,7 +144,10 @@ class Toolbox:
          "parameters": {"type": "object", "properties": {
              "platform": {"type": "string", "description": "android, mac, windows, linux, ios, desktop or all (default all)."},
              "send_file": {"type": "boolean", "description": "Also send the installer file in the chat (Telegram only)."}}}},
-        {"name": "add_steps", "description": "Break a task into small steps: appends them to the task's notes as a "
+        {"name": "set_reminder", "description": "Remind the user about a task at a moment (in-app and Telegram).",
+         "parameters": {"type": "object", "required": ["task_id", "at"], "properties": {
+             "task_id": {"type": "integer"}, "at": {"type": "string", "description": "Local date and time, YYYY-MM-DDTHH:MM."}}}},
+        {"name": "add_steps", "description": "Break a task into small steps: adds them to the task's "
          "checklist. Use for big or vague tasks (especially in ADHD mode): 3-5 concrete steps, the first under 5 minutes.",
          "parameters": {"type": "object", "required": ["task_id", "steps"], "properties": {
              "task_id": {"type": "integer"}, "steps": {"type": "array", "items": {"type": "string"}}}}},
@@ -245,9 +263,13 @@ class Toolbox:
             )
         return "\n".join(out)
 
-    def tool_create_task(self, title, workspace="", project="", day="today", priority="", notes=""):
+    def tool_create_task(self, title, workspace="", project="", day="today", priority="", notes="", repeat=None, estimate_minutes=None):
         ws = self._workspace(workspace)
         data = {"title": title[:255], "description": notes, "assignee": self.user.id}
+        if repeat:
+            data["recurrence"] = repeat
+        if estimate_minutes:
+            data["estimate_minutes"] = int(estimate_minutes)
         target = parse_day(day, self.today)
         data["planned_date"] = target.isoformat() if target else None
         if project:
@@ -263,9 +285,13 @@ class Toolbox:
         task = self._save(Task(workspace=ws), data)
         return "Created " + describe(task, self.today)
 
-    def tool_update_task(self, task_id, title=None, day=None, status=None, priority=None):
+    def tool_update_task(self, task_id, title=None, day=None, status=None, priority=None, repeat=None, estimate_minutes=None):
         task = self._task(task_id)
         data = {}
+        if repeat is not None:
+            data["recurrence"] = repeat or None
+        if estimate_minutes is not None:
+            data["estimate_minutes"] = int(estimate_minutes) or None
         if title:
             data["title"] = title[:255]
         if day is not None:
@@ -404,10 +430,28 @@ class Toolbox:
         steps = [str(x).strip()[:200] for x in (steps or []) if str(x).strip()][:12]
         if not steps:
             return "Error: no steps given."
-        checklist = "\n".join(f"- [ ] {x}" for x in steps)
-        notes = (task.description.rstrip() + "\n\n" if task.description.strip() else "") + checklist
-        self._save(task, {"description": notes})
-        return f"Added {len(steps)} steps to #{task.id} “{task.title}”."
+        items = list(task.checklist or []) + [{"text": x, "done": False} for x in steps]
+        self._save(task, {"checklist": items})
+        return f"Added {len(steps)} steps to the checklist of #{task.id} “{task.title}”."
+
+    def tool_set_reminder(self, task_id, at):
+        from datetime import datetime
+
+        from calendars.sync import user_tz
+        from django.utils import timezone as tz
+
+        from tasks.models import Reminder
+
+        task = self._task(task_id)
+        try:
+            when = datetime.fromisoformat(str(at).strip()[:16])
+        except ValueError:
+            raise ValueError("Use YYYY-MM-DDTHH:MM for the moment.") from None
+        when = when.replace(tzinfo=user_tz(self.user))
+        if when < tz.now():
+            raise ValueError("That moment has already passed.")
+        Reminder.objects.get_or_create(task=task, user=self.user, remind_at=when)
+        return f"I'll remind you about #{task.id} “{task.title}” on {when:%a %d %b at %H:%M}."
 
     def _wikis(self, workspace=""):
         from wiki.search import sources

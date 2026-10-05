@@ -167,10 +167,14 @@ class TaskSerializer(WorkspaceScopedSerializer):
             "created_at",
             "updated_at",
             "completed_at",
+            "checklist",
+            "estimate_minutes",
+            "recurrence",
+            "series",
             "comment_count",
             "attachment_count",
         ]
-        read_only_fields = ["id", "ref", "workspace", "created_by", "created_at", "updated_at", "completed_at"]
+        read_only_fields = ["id", "ref", "workspace", "created_by", "created_at", "updated_at", "completed_at", "series"]
 
     def get_comment_count(self, obj):
         value = getattr(obj, "comment_count", None)
@@ -192,6 +196,50 @@ class TaskSerializer(WorkspaceScopedSerializer):
                 )
             seen[tag.group_id] = tag
         return tags
+
+    def validate_checklist(self, items):
+        import secrets
+
+        if items is None:
+            return []
+        if not isinstance(items, list) or len(items) > 100:
+            raise serializers.ValidationError("A list of at most 100 items.")
+        out, seen = [], set()
+        for item in items:
+            if isinstance(item, str):
+                item = {"text": item}
+            if not isinstance(item, dict) or not str(item.get("text", "")).strip():
+                raise serializers.ValidationError("Each item needs a text.")
+            key = str(item.get("id") or "")[:12] or secrets.token_hex(4)
+            if key in seen:
+                key = secrets.token_hex(4)
+            seen.add(key)
+            out.append({"id": key, "text": str(item["text"]).strip()[:300], "done": bool(item.get("done"))})
+        return out
+
+    def validate_estimate_minutes(self, value):
+        if value is not None and not 1 <= value <= 7 * 24 * 60:
+            raise serializers.ValidationError("Between 1 minute and a week.")
+        return value
+
+    def validate_recurrence(self, value):
+        from .recurrence import clean
+
+        try:
+            return clean(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from None
+
+    def to_representation(self, obj):
+        from .recurrence import is_rule
+
+        data = super().to_representation(obj)
+        if not is_rule(data.get("recurrence")):
+            data["recurrence"] = None  # internal marker of an occurrence already repeated
+        nxt = getattr(obj, "_next_occurrence", None)
+        if nxt is not None:
+            data["next_occurrence"] = {"id": nxt.id, "planned_date": nxt.planned_date, "due_date": nxt.due_date}
+        return data
 
     def _apply_status(self, validated_data, instance=None):
         status = validated_data.get("status")
@@ -216,5 +264,16 @@ class TaskSerializer(WorkspaceScopedSerializer):
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
+        from . import recurrence
+
+        was_done = instance.status.is_done
         self._apply_status(validated_data, instance)
-        return super().update(instance, validated_data)
+        if "recurrence" in validated_data and validated_data["recurrence"] is None and not recurrence.is_rule(instance.recurrence):
+            validated_data.pop("recurrence")  # keep the "already repeated" marker when a form sends no rule
+        task = super().update(instance, validated_data)
+        if task.status.is_done and not was_done and recurrence.is_rule(task.recurrence):
+            request = self.context.get("request")
+            task._next_occurrence = recurrence.spawn_next(task, getattr(request, "user", None))
+        elif was_done and not task.status.is_done:
+            recurrence.undo_spawn(task)
+        return task

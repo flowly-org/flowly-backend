@@ -17,7 +17,7 @@ _last_brief_check = 0.0
 def tick():
     from . import focus
 
-    for job in (team_jobs, team_briefs, reflections, focus.tick):
+    for job in (team_jobs, team_briefs, reflections, focus.tick, send_reminders):
         try:
             job()
         except Exception:
@@ -33,6 +33,24 @@ def tick():
             log.exception("%s crashed", job.__name__)
 
 
+def send_reminders(limit=50):
+    """Reminders whose moment has come: an in-app notification (and Telegram when Flo is linked)."""
+    from django.utils import timezone
+
+    from tasks.models import Reminder
+
+    now = timezone.now()
+    due = list(Reminder.objects.filter(sent_at__isnull=True, remind_at__lte=now)
+               .select_related("task__status", "task__workspace", "task__project", "user")[:limit])
+    Reminder.objects.filter(pk__in=[r.pk for r in due]).update(sent_at=now)
+    for r in due:
+        task = r.task
+        if task.status.is_done or now - r.remind_at > timedelta(hours=12):
+            continue  # done already, or the worker was down for long: don't remind about stale things
+        where = " · ".join(filter(None, [task.workspace.name, task.project.name if task.project_id else ""]))
+        notify.create(r.user, Notification.Kind.REMINDER, f"⏰ {task.title}", where, task=task)
+
+
 def send_alerts(limit=20):
     pending = Notification.objects.filter(telegram=Notification.Telegram.PENDING).select_related("user__concierge")[:limit]
     for n in pending:
@@ -40,7 +58,7 @@ def send_alerts(limit=20):
         if not profile or not profile.telegram_chat_id:
             n.telegram = Notification.Telegram.NONE
         else:
-            icon = {"urgent": "🔴", "assigned": "📌", "comment": "💬"}.get(n.kind, "🔔")
+            icon = {"urgent": "🔴", "assigned": "📌", "comment": "💬", "reminder": "⏰", "focus": ""}.get(n.kind, "🔔")
             try:
                 telegram.send_message(profile.telegram_chat_id, f"{icon} {n.title}\n{n.body}".strip())
                 n.telegram = Notification.Telegram.SENT
