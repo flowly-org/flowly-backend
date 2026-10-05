@@ -63,9 +63,9 @@ def ensure(setup, today):
     planned = setup.sprints.filter(status=Sprint.Status.PLANNED).order_by("start").first()
     if planned and (planned.start <= today or planned.start - today <= timedelta(days=7 * setup.sprint_weeks)):
         # The next planned sprint starts now (also when the previous one was closed early).
-        planned.start = min(planned.start, today)
-        if planned.end < today:
-            planned.end = today + timedelta(days=7 * setup.sprint_weeks - 1)
+        if planned.start > today or planned.end < today:  # starting early (or late): keep the usual length
+            planned.start = min(planned.start, today)
+            planned.end = planned.start + timedelta(days=7 * setup.sprint_weeks - 1)
         planned.status = Sprint.Status.ACTIVE
         planned.save(update_fields=["start", "end", "status"])
         return planned

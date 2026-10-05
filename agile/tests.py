@@ -60,7 +60,8 @@ class AgileTests(APITestCase):
         r = closed["review"]
         self.assertEqual((r["committed"], r["done"], r["carried_over"], r["done_minutes"]), (3, 1, 2, 120))
         nxt = Sprint.objects.get(setup_id=setup.data["id"], number=2)
-        self.assertEqual(nxt.status, "active")  # closed early: the next sprint starts now
+        self.assertEqual(nxt.status, "active")  # closed early: the next sprint starts now, with the usual length
+        self.assertEqual((nxt.end - nxt.start).days, 6)
         self.assertEqual(Sprint.objects.filter(setup_id=setup.data["id"]).count(), 2)
         self.assertEqual(set(nxt.tasks.values_list("title", flat=True)), {"API auth", "Docs"})
         self.assertTrue(Notification.objects.filter(user=self.dev, title__contains="Sprint 1 review").exists())
