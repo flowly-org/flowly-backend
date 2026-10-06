@@ -12,8 +12,8 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro",
-                  "has_pro_plus", "is_bot", "adhd_mode", "focus"]
-        read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "has_pro_plus", "is_bot"]
+                  "has_pro_plus", "is_bot", "adhd_mode", "focus", "plan_source", "plan_expires_at"]
+        read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "has_pro_plus", "is_bot", "plan_source", "plan_expires_at"]
 
     def validate_focus(self, value):
         from .focus import clean
@@ -52,10 +52,12 @@ class UserSerializer(serializers.ModelSerializer):
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, style={"input_type": "password"})
+    code = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=60,
+                                 help_text="Invite code (optional): gives the plan it was made for.")
 
     class Meta:
         model = User
-        fields = ["id", "email", "full_name", "password", "language"]
+        fields = ["id", "email", "full_name", "password", "language", "code"]
         read_only_fields = ["id"]
         extra_kwargs = {"language": {"required": False}}
 
@@ -73,5 +75,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         validate_password(value)
         return value
 
+    def validate_code(self, value):
+        from .codes import CodeError, find
+
+        if not value.strip():
+            return ""
+        try:
+            find(value)
+        except CodeError as exc:
+            raise serializers.ValidationError(str(exc)) from None
+        return value
+
     def create(self, validated_data):
-        return User.objects.create_user(**validated_data)
+        from django.db import transaction
+
+        from .codes import CodeError, redeem
+
+        code = validated_data.pop("code", "")
+        with transaction.atomic():
+            user = User.objects.create_user(**validated_data)
+            if code:
+                try:
+                    redeem(user, code)
+                except CodeError as exc:  # e.g. its last use was taken a moment ago
+                    raise serializers.ValidationError({"code": str(exc)}) from None
+        return user

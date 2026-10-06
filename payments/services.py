@@ -209,9 +209,14 @@ def apply(customer: Customer):
     best = max(live, key=lambda s: (RANK.get(s.kind, 0), s.current_period_end or timezone.now()), default=None)
     if customer.user_id:
         user = customer.user
-        if best:
+        from accounts.codes import best_grant
+
+        grant = best_grant(user)  # an invite code's plan is never taken away by Stripe
+        if best and not (grant and RANK.get(grant[0], 0) >= RANK.get(best.kind, 0) and grant[1] is None):
             user.plan, user.plan_source = (best.kind if best.kind in RANK else "pro"), "stripe"
             user.plan_expires_at = (best.current_period_end + GRACE) if best.current_period_end else None
+        elif grant:
+            user.plan, user.plan_source, user.plan_expires_at = grant[0], "code", grant[1]
         elif user.plan_source == "stripe":
             user.plan, user.plan_expires_at = "free", None
         user.save(update_fields=["plan", "plan_source", "plan_expires_at"])

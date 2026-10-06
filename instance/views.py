@@ -7,6 +7,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count, OuterRef, Q, Sum
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, serializers, status
 from rest_framework.exceptions import ValidationError
@@ -369,3 +370,73 @@ class WorkspaceDetailView(WorkspacesView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(AdminWorkspaceSerializer(self.queryset().get(pk=pk)).data)
+
+
+class InviteCodeSerializer(serializers.ModelSerializer):
+    code = serializers.CharField(required=False, max_length=40)
+
+    class Meta:
+        from accounts.models import InviteCode
+
+        model = InviteCode
+        fields = ["id", "code", "plan", "days", "max_uses", "uses", "valid_until", "active", "note", "created_at"]
+        read_only_fields = ["id", "uses", "created_at"]
+
+    def validate_code(self, value):
+        import re
+
+        from accounts.codes import normalize
+        from accounts.models import InviteCode
+
+        value = normalize(value)
+        if not re.fullmatch(r"[A-Z0-9-]{6,40}", value):
+            raise ValidationError("6 to 40 letters, digits or dashes.")
+        clash = InviteCode.objects.filter(code__iexact=value)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise ValidationError("That code already exists.")
+        return value
+
+
+class InviteCodesView(StaffView):
+    """GET the invite codes (with who used them); POST a new one (empty code = generated)."""
+
+    def get(self, request):
+        from accounts.models import InviteCode
+
+        out = []
+        for c in InviteCode.objects.prefetch_related("redemptions__user"):
+            data = InviteCodeSerializer(c).data
+            data["link"] = f"{conf.get('PUBLIC_URL')}/register?code={c.code}"
+            data["redeemed_by"] = [{"email": r.user.email, "name": r.user.full_name, "at": r.created_at} for r in c.redemptions.all()[:200]]
+            out.append(data)
+        return Response(out)
+
+    def post(self, request):
+        s = InviteCodeSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        c = s.save(created_by=request.user)
+        return Response({**InviteCodeSerializer(c).data, "link": f"{conf.get('PUBLIC_URL')}/register?code={c.code}", "redeemed_by": []}, status=201)
+
+
+class InviteCodeView(StaffView):
+    """PATCH (active, max uses, validity, note); DELETE only while unused (otherwise switch it off)."""
+
+    def patch(self, request, pk):
+        from accounts.models import InviteCode
+
+        c = get_object_or_404(InviteCode, pk=pk)
+        data = {k: v for k, v in request.data.items() if k in ("active", "max_uses", "valid_until", "note")}
+        s = InviteCodeSerializer(c, data=data, partial=True)
+        s.is_valid(raise_exception=True)
+        return Response(InviteCodeSerializer(s.save()).data)
+
+    def delete(self, request, pk):
+        from accounts.models import InviteCode
+
+        c = get_object_or_404(InviteCode, pk=pk)
+        if c.uses:
+            raise ValidationError({"detail": "This code was already used: switch it off instead (what people got stays)."})
+        c.delete()
+        return Response(status=204)

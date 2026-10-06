@@ -112,3 +112,48 @@ class ApiToken(models.Model):
         raw = cls.PREFIX + secrets.token_urlsafe(32)
         token = cls.objects.create(user=user, name=name, hint=raw[:10], token_hash=cls.hash(raw))
         return token, raw
+
+
+def new_invite_code():
+    import secrets
+
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    raw = "".join(secrets.choice(alphabet) for _ in range(8))
+    return f"FLOWLY-{raw[:4]}-{raw[4:]}"
+
+
+class InviteCode(models.Model):
+    """A code that gives whoever registers (or redeems it) a plan: e.g. Pro Plus forever for a selected group."""
+
+    code = models.CharField(max_length=40, unique=True, default=new_invite_code)
+    plan = models.CharField(max_length=10, choices=[("pro", "Pro"), ("pro_plus", "Pro Plus")], default="pro_plus")
+    #: How long the plan lasts after redeeming; empty = forever.
+    days = models.PositiveIntegerField(null=True, blank=True)
+    #: How many people can use it; empty = no limit.
+    max_uses = models.PositiveIntegerField(null=True, blank=True)
+    uses = models.PositiveIntegerField(default=0)
+    #: The code can be redeemed until then; empty = no end.
+    valid_until = models.DateTimeField(null=True, blank=True)
+    active = models.BooleanField(default=True)
+    note = models.CharField(max_length=200, blank=True, help_text="Who it's for (only admins see this).")
+    created_by = models.ForeignKey("User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.code
+
+
+class CodeRedemption(models.Model):
+    code = models.ForeignKey(InviteCode, on_delete=models.PROTECT, related_name="redemptions")
+    user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="code_redemptions")
+    #: Copied at redemption: changing the code later doesn't change what people already got.
+    plan = models.CharField(max_length=10)
+    plan_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["code", "user"], name="unique_code_redemption")]
