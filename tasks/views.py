@@ -2,6 +2,7 @@ from django.db.models import Count, Max, Prefetch, Q
 from drf_spectacular.utils import extend_schema, inline_serializer
 from django.db import transaction
 from rest_framework import generics, serializers, viewsets
+from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -51,6 +52,58 @@ class ProjectViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         save_appended(serializer, self.workspace.projects.all(), workspace=self.workspace)
+
+    @action(detail=True, methods=["post"])
+    def move(self, request, *args, **kwargs):
+        """Move the project to another workspace. `{"workspace": id, "dry_run": true}` only reports what would happen."""
+        from workspaces.models import Workspace
+
+        from . import relocate
+
+        self.require_manager()
+        project = self.get_object()
+        target = Workspace.objects.filter(pk=request.data.get("workspace"), memberships__user=request.user).first()
+        if target is None:
+            raise ValidationError({"workspace": "Pick one of your workspaces."})
+        if target.pk == self.workspace.pk:
+            raise ValidationError({"workspace": "The project is already in this workspace."})
+        if _truthy(request.data.get("dry_run")):
+            members = set(target.memberships.values_list("user_id", flat=True))
+            return Response({**relocate.plan(project, members), "workspace": target.pk})
+        try:
+            return Response(relocate.move(project, target, request.user))
+        except relocate.RelocateError as err:
+            raise ValidationError({"detail": str(err)})
+
+    @action(detail=True, methods=["post"])
+    def promote(self, request, *args, **kwargs):
+        """Turn the project into a workspace of its own: `{"name": "", "members": "involved|all|me", "dry_run": true}`."""
+        from . import relocate
+
+        self.require_manager()
+        project = self.get_object()
+        members = request.data.get("members") or "involved"
+        if members not in ("involved", "all", "me"):
+            raise ValidationError({"members": "Use involved, all or me."})
+        if _truthy(request.data.get("dry_run")):
+            others = self.workspace.memberships.exclude(user=request.user)
+            chosen = {
+                "involved": set(others.filter(user_id__in=relocate._people(project)).values_list("user_id", flat=True)),
+                "all": set(others.values_list("user_id", flat=True)),
+                "me": set(),
+            }
+            assigned = project.tasks.exclude(assignee=None)
+            return Response({
+                **relocate.plan(project),
+                "people_by_choice": {k: len(v) for k, v in chosen.items()},
+                "unassigned_by_choice": {k: assigned.exclude(assignee_id__in=v | {request.user.pk}).count() for k, v in chosen.items()},
+            })
+        name = (request.data.get("name") or "").strip()
+        return Response(relocate.promote(project, request.user, name=name, members=members))
+
+
+def _truthy(value):
+    return value in (True, "true", "1", 1, "yes")
 
 
 class TagGroupViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
