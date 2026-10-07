@@ -20,8 +20,16 @@ DEFAULTS = {
     "day_end": "18:00",
     #: A notification when a time block starts.
     "block_reminders": True,
+    #: Minutes to reach an appointment in your home town (twice that out of town); busy time and "leave by".
+    "transfer_minutes": 45,
+    #: Flo's briefing before appointments, on Telegram: off, in_person (events with a place) or all (every timed event).
+    "appointment_briefs": "off",
+    #: How many minutes before you need to leave the briefing arrives.
+    "appointment_lead_minutes": 15,
 }
-LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120), "capacity_minutes": (30, 1440)}
+#: Settings that take one of a few words.
+CHOICES = {"appointment_briefs": ("off", "in_person", "all")}
+LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120), "capacity_minutes": (30, 1440), "transfer_minutes": (0, 240), "appointment_lead_minutes": (0, 180)}
 
 
 def clean(value) -> dict:
@@ -34,6 +42,11 @@ def clean(value) -> dict:
         v = value[key]
         if isinstance(default, bool):
             out[key] = bool(v)
+            continue
+        if key in CHOICES:
+            if v not in CHOICES[key]:
+                raise ValueError(f"{key} must be one of: {', '.join(CHOICES[key])}.")
+            out[key] = v
             continue
         if isinstance(default, str):
             import re

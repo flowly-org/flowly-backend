@@ -15,9 +15,11 @@ _last_brief_check = 0.0
 
 
 def tick():
+    from calendars import travel
+
     from . import focus
 
-    for job in (team_jobs, team_briefs, reflections, focus.tick, send_reminders, weekly_reviews):
+    for job in (team_jobs, team_briefs, reflections, focus.tick, travel.tick, send_reminders, weekly_reviews):
         try:
             job()
         except Exception:

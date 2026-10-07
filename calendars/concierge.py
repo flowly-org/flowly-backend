@@ -18,9 +18,15 @@ def when(event: CalendarEvent, tz) -> str:
 
 
 def line(event: CalendarEvent, tz, user, tasks_qs=None) -> str:
+    from . import travel
+
     bits = [f"E{event.id} {when(event, tz)}: {event.title}"]
     if event.location:
         bits.append(f"@ {event.location}")
+    leave = travel.leave_at(event, user)
+    if leave:
+        bits.append(f"(leave by {leave.astimezone(tz):%H:%M}: about {travel.minutes(event, user)} min to get there"
+                    f"{', out of town' if travel.kind(event, user.home_location) == 'away' else ''})")
     text = " ".join(bits)
     if event.needs_prep:
         linked, found = prep.related_tasks(event, user)
@@ -77,7 +83,8 @@ BRIEF_RULES = (
     "little free time, a trip). For each event that may need preparation: if it has linked or clearly related "
     "tasks, say in a few words that it's covered (or what is still open); if nothing covers it, ask whether "
     "something is needed (tickets, travel, hotel, registration, a gift) and offer to create the task. For events "
-    "away from home that aren't confirmed, ask whether they're still on. Refer to events by their title and date, "
+    "away from home that aren't confirmed, ask whether they're still on. For today's appointments with a leave-by "
+    "time, say when to leave. Refer to events by their title and date, "
     "never by their E-number. Keep this part to a few lines, most urgent first."
 )
 

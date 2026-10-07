@@ -21,9 +21,14 @@ def working_hours(user, day, tz):
 
 
 def busy(user, lo, hi):
-    """Merged busy spans (timed events that aren't marked background, and time blocks) within [lo, hi)."""
-    spans = [(e.start, e.end) for e in CalendarEvent.objects.filter(user=user, all_day=False, calendar__selected=True,
-                                                                    start__lt=hi, end__gt=lo).exclude(prep="background")]
+    """Merged busy spans (timed events that aren't marked background, with travel to and from them, and time
+    blocks) within [lo, hi)."""
+    from . import travel
+
+    margin = timedelta(hours=8)
+    events = CalendarEvent.objects.filter(user=user, all_day=False, calendar__selected=True,
+                                          start__lt=hi + margin, end__gt=lo - margin).exclude(prep="background")
+    spans = [(s, e) for s, e in travel.spans(events, user) if s < hi and e > lo]
     spans += [(b.start, b.end) for b in TimeBlock.objects.filter(user=user, start__lt=hi, end__gt=lo)]
     spans = sorted((max(s, lo), min(e, hi)) for s, e in spans)
     merged = []

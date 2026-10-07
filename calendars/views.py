@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from instance import conf
 from integrations.http import DeliveryError
 
-from . import google, microsoft, prep, providers, services, sync
+from . import travel, google, microsoft, prep, providers, services, sync
 from .models import Calendar, CalendarAccount, CalendarEvent
 
 STATE_SALT = "flowly.calendar.google"
@@ -42,6 +42,9 @@ def event_data(event, user, related=False):
         "start": event.start, "end": event.end, "start_date": event.start_date, "end_date": event.end_date,
         "prep": event.prep, "needs_prep": event.needs_prep, "reason": event.reason,
         "confirmed": event.confirmed_at is not None,
+        "travel": travel.kind(event, user.home_location),
+        "travel_minutes": travel.minutes(event, user),
+        "leave_at": travel.leave_at(event, user),
         "tasks": [task_data(t) for t in prep.visible_tasks(user).filter(calendar_events=event)],
     }
     if related:

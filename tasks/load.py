@@ -12,15 +12,15 @@ DEFAULT_CAPACITY = 8 * 60
 
 
 def busy_minutes(user, day, tz) -> int:
-    """Minutes of timed calendar events that day (overlaps merged), within the working capacity."""
+    """Minutes of timed calendar events that day, with the travel to and from them (overlaps merged)."""
+    from calendars import travel
     from calendars.models import CalendarEvent
 
     start = datetime.combine(day, time.min, tzinfo=tz)
     end = start + timedelta(days=1)
-    spans = sorted(
-        (max(e.start, start), min(e.end, end))
-        for e in CalendarEvent.objects.filter(user=user, all_day=False, start__lt=end, end__gt=start).exclude(prep="background")
-    )
+    margin = timedelta(hours=8)  # events just outside the day whose travel reaches into it
+    events = CalendarEvent.objects.filter(user=user, all_day=False, start__lt=end + margin, end__gt=start - margin).exclude(prep="background")
+    spans = sorted((max(s, start), min(e, end)) for s, e in travel.spans(events, user) if s < end and e > start)
     total, cur_s, cur_e = 0, None, None
     for s, e in spans:
         if cur_e is None or s > cur_e:
