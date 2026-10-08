@@ -14,4 +14,5 @@ RUN DJANGO_SECRET_KEY=build python manage.py collectstatic --noinput
 
 EXPOSE 8000
 ENTRYPOINT ["./entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3"]
+# Threads: requests mostly wait on the AI model or other APIs. The timeout covers Flo's longest turns (it budgets ~70 s).
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--worker-class", "gthread", "--threads", "8", "--timeout", "180"]

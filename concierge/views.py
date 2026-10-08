@@ -13,7 +13,7 @@ from . import brain, telegram
 from .bot import handle_update
 from .i18n import LANGUAGES
 from .personality import PERSONALITIES, choices as personality_choices
-from .models import AIUsage, Notification
+from .models import AIUsage, ConciergeMessage, Notification
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -172,7 +172,17 @@ class TelegramLinkView(APIView):
 
 
 class ConciergeChatView(APIView):
-    """Talk to the concierge from the web app."""
+    """Talk to the concierge from the web app. GET: whether Flo can answer, and the recent conversation (all channels)."""
+
+    def get(self, request):
+        reason = brain.availability(request.user)
+        recent = ConciergeMessage.objects.filter(user=request.user).exclude(channel="brief").order_by("-created_at", "-id")[:40]
+        return Response({
+            "available": reason is None,
+            "reason": reason,
+            "name": brain.profile_for(request.user).name or "Flo",
+            "messages": [{"role": m.role, "content": m.content, "channel": m.channel, "at": m.created_at} for m in reversed(recent)],
+        })
 
     def post(self, request):
         text = (request.data.get("message") or "").strip()
@@ -182,6 +192,14 @@ class ConciergeChatView(APIView):
 
 
 class ConciergeBriefView(APIView):
+    def get(self, request):
+        """Today's brief if Flo already wrote one (in the user's time zone), else null; POST writes one."""
+        now = brain.local_now(request.user)
+        midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        latest = ConciergeMessage.objects.filter(user=request.user, channel="brief", created_at__gte=midnight).order_by("-created_at").first()
+        return Response({"brief": latest.content if latest else None, "available": brain.availability(request.user) is None,
+                         "date": now.date()})
+
     def post(self, request):
         text = brain.brief(request.user)
         profile = brain.profile_for(request.user)

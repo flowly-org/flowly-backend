@@ -83,6 +83,9 @@ def _handle(chat_id, text, username):
     if profile is None:
         return telegram.send_message(chat_id, "Hi! To connect, open Flowly → Settings → Concierge and tap “Connect Telegram”.")
     user = profile.user
+    from accounts.activity import touch
+
+    touch(user)
     command = text.split()[0].split("@")[0].lower() if text.startswith("/") else ""
     code = brain.lang(user)
     if command in ("/start", "/help"):

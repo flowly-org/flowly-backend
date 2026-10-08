@@ -152,15 +152,52 @@ class CheckView(StaffView):
         return f"App {data.get('slug')} OK; {len(installs)} installation(s)."
 
 
+ACTIVE_DAYS = 7
+
+
+def with_activity(qs):
+    """Annotate users with what they've done: tasks created, messages to Flo, Telegram linked."""
+    from django.db.models import Exists, IntegerField, Subquery
+    from django.db.models.functions import Coalesce
+
+    from concierge.models import ConciergeMessage, ConciergeProfile
+    from tasks.models import Task
+
+    def count(model, owner, **filters):
+        sub = model.objects.filter(**{owner: OuterRef("pk")}, **filters).values(owner).annotate(n=Count("pk")).values("n")
+        return Coalesce(Subquery(sub, output_field=IntegerField()), 0)
+
+    return qs.annotate(
+        tasks=count(Task, "created_by"),
+        flo_messages=count(ConciergeMessage, "user", role="user"),
+        telegram=Exists(ConciergeProfile.objects.filter(user=OuterRef("pk"), telegram_chat_id__isnull=False)),
+    )
+
+
+def activation_stage(user) -> str:
+    """signed_up → first_task → used_flo; "active" when also seen in the last week."""
+    stage = "used_flo" if user.flo_messages else "first_task" if user.tasks else "signed_up"
+    recent = user.last_seen_at and user.last_seen_at > timezone.now() - timedelta(days=ACTIVE_DAYS)
+    return f"{stage}" + (",active" if recent else "")
+
+
 class AdminUserSerializer(serializers.ModelSerializer):
     workspaces = serializers.IntegerField(read_only=True)
     tokens_30d = serializers.IntegerField(read_only=True)
+    tasks = serializers.IntegerField(read_only=True)
+    flo_messages = serializers.IntegerField(read_only=True)
+    telegram = serializers.BooleanField(read_only=True)
+    stage = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ["id", "email", "full_name", "plan", "plan_expires_at", "plan_source", "is_staff", "is_active",
-                  "date_joined", "last_login", "workspaces", "tokens_30d"]
-        read_only_fields = ["id", "email", "full_name", "date_joined", "last_login", "plan_source"]
+                  "date_joined", "last_login", "last_seen_at", "workspaces", "tokens_30d", "tasks", "flo_messages",
+                  "telegram", "stage"]
+        read_only_fields = ["id", "email", "full_name", "date_joined", "last_login", "last_seen_at", "plan_source"]
+
+    def get_stage(self, obj):
+        return activation_stage(obj)
 
     def update(self, instance, validated_data):
         if "plan" in validated_data or "plan_expires_at" in validated_data:
@@ -182,10 +219,10 @@ class UsersView(StaffView):
         from django.db.models import IntegerField, Subquery
         from django.db.models.functions import Coalesce
 
-        return User.objects.annotate(
+        return with_activity(User.objects.annotate(
             workspaces=Count("memberships", distinct=True),
             tokens_30d=Coalesce(Subquery(tokens, output_field=IntegerField()), 0),
-        ).order_by("-date_joined")
+        )).order_by("-date_joined")
 
     def get(self, request):
         qs = self.queryset()
@@ -229,8 +266,22 @@ class OverviewView(StaffView):
                 "telegram_linked": ConciergeProfile.objects.filter(telegram_chat_id__isnull=False).count(),
                 "telegram_pending": Notification.objects.filter(telegram="pending").count(),
                 "ai_today": {"requests": usage["r"] or 0, "tokens": (usage["t"] or 0) + (usage["c"] or 0)},
+                "activation": activation_funnel(),
             }
         )
+
+
+def activation_funnel():
+    """How far real people (not bots) got: signed up, created a task, talked to Flo, linked Telegram, active this week."""
+    users = list(with_activity(User.objects.filter(is_bot=False, is_active=True)))
+    week = timezone.now() - timedelta(days=ACTIVE_DAYS)
+    return {
+        "signed_up": len(users),
+        "first_task": sum(1 for u in users if u.tasks),
+        "used_flo": sum(1 for u in users if u.flo_messages),
+        "telegram": sum(1 for u in users if u.telegram),
+        "active_7d": sum(1 for u in users if u.last_seen_at and u.last_seen_at > week),
+    }
 
 
 class GitHubAppAdminView(StaffView):

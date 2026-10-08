@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from .onboard import SetupView
 
 urlpatterns = [
     path("notifications/", views.NotificationsView.as_view(), name="notifications"),
@@ -8,5 +9,6 @@ urlpatterns = [
     path("concierge/telegram/link/", views.TelegramLinkView.as_view(), name="concierge-telegram-link"),
     path("concierge/telegram/webhook/", views.TelegramWebhookView.as_view(), name="concierge-telegram-webhook"),
     path("concierge/chat/", views.ConciergeChatView.as_view(), name="concierge-chat"),
+    path("concierge/setup/", SetupView.as_view(), name="concierge-setup"),
     path("concierge/brief/", views.ConciergeBriefView.as_view(), name="concierge-brief"),
 ]

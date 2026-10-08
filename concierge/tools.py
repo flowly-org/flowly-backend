@@ -87,10 +87,10 @@ class Toolbox:
     SCHEMA = [
         {"name": "list_tasks", "description": "List tasks. Use before answering questions about the user's day or tasks.",
          "parameters": {"type": "object", "properties": {
-             "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD. Default today."},
+             "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD. Default today, or every date when you pass a query."},
              "include_overdue": {"type": "boolean", "description": "Also unfinished tasks planned earlier (default true)."},
              "everyone": {"type": "boolean", "description": "Include tasks assigned to others (default false)."},
-             "query": {"type": "string", "description": "Optional text to search in titles."}}}},
+             "query": {"type": "string", "description": "Words to find in titles (all must match). Without a day it searches open tasks on every date: use it to find a task before changing it."}}}},
         {"name": "list_workspaces", "description": "Workspaces with their projects, statuses and priorities.",
          "parameters": {"type": "object", "properties": {}}},
         {"name": "create_task", "description": "Create a task assigned to the user.",
@@ -98,7 +98,7 @@ class Toolbox:
              "title": {"type": "string"}, "workspace": {"type": "string"}, "project": {"type": "string"},
              "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD (default today)."},
              "priority": {"type": "string"}, "notes": {"type": "string"},
-             "repeat": {"type": "object", "description": "Make it recurring: {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition.",
+             "repeat": {"type": "object", "description": "ONLY when the user asks for a repeating task ('every Monday', 'each month'): {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition. Never use it to set or move a date: that's 'day'.",
                         "properties": {"freq": {"type": "string"}, "interval": {"type": "integer"}, "weekdays": {"type": "array", "items": {"type": "integer"}}, "after_done": {"type": "boolean"}}},
              "estimate_minutes": {"type": "integer", "description": "How long it takes, in minutes."}}}},
         {"name": "add_tasks", "description": "Create several tasks at once from a list (dictated, pasted, meeting notes). "
@@ -107,14 +107,16 @@ class Toolbox:
          "parameters": {"type": "object", "required": ["lines"], "properties": {
              "lines": {"type": "string"}, "workspace": {"type": "string"},
              "day": {"type": "string", "description": "Default day for lines without @date: 'today', 'tomorrow', 'backlog' or YYYY-MM-DD (default today)."}}}},
-        {"name": "update_task", "description": "Change a task: reschedule, rename, set status or priority.",
+        {"name": "update_task", "description": "Change an existing task: reschedule (day), rename, set status or priority. To move a task, update it; never create a copy.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {
              "task_id": {"type": "integer"}, "title": {"type": "string"},
              "day": {"type": "string", "description": "'today', 'tomorrow', 'backlog' or YYYY-MM-DD."},
              "status": {"type": "string"}, "priority": {"type": "string", "description": "Priority name or 'none'."},
-             "repeat": {"type": "object", "description": "Make it recurring: {freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}. {} removes the repetition.",
-                        "properties": {"freq": {"type": "string"}, "interval": {"type": "integer"}, "weekdays": {"type": "array", "items": {"type": "integer"}}, "after_done": {"type": "boolean"}}},
              "estimate_minutes": {"type": "integer", "description": "How long it takes, in minutes."}}}},
+        {"name": "set_repeat", "description": "Make a task repeat, change how, or stop it repeating. Only when the user asks for it ('every Monday', 'monthly', 'stop repeating').",
+         "parameters": {"type": "object", "required": ["task_id", "repeat"], "properties": {
+             "task_id": {"type": "integer"},
+             "repeat": {"type": "object", "description": "{freq: daily|weekly|monthly|yearly, interval: 1, weekdays: [0..6, Monday=0] for weekly, after_done: bool}; {} stops the repetition."}}}},
         {"name": "complete_task", "description": "Mark a task done.",
          "parameters": {"type": "object", "required": ["task_id"], "properties": {"task_id": {"type": "integer"}}}},
         {"name": "add_comment", "description": "Add a comment to a task's discussion.",
@@ -270,20 +272,24 @@ class Toolbox:
 
     # --- tools ----------------------------------------------------------------
 
-    def tool_list_tasks(self, day="today", include_overdue=True, everyone=False, query=""):
+    def tool_list_tasks(self, day=None, include_overdue=True, everyone=False, query=""):
         qs = self._tasks()
         if not everyone:
             qs = qs.filter(assignee=self.user)
-        target = parse_day(day, self.today)
-        if target is None:
-            qs = qs.filter(planned_date__isnull=True)
+        if query and not day:
+            # Looking for a task by name: any date, open ones (and the backlog).
+            qs = qs.filter(status__is_done=False)
         else:
-            cond = Q(planned_date=target)
-            if include_overdue and target == self.today:
-                cond |= Q(planned_date__lt=target, status__is_done=False)
-            qs = qs.filter(cond)
-        if query:
-            qs = qs.filter(title__icontains=query)
+            target = parse_day(day or "today", self.today)
+            if target is None:
+                qs = qs.filter(planned_date__isnull=True)
+            else:
+                cond = Q(planned_date=target)
+                if include_overdue and target == self.today:
+                    cond |= Q(planned_date__lt=target, status__is_done=False)
+                qs = qs.filter(cond)
+        for word in str(query or "").split()[:6]:
+            qs = qs.filter(title__icontains=word)
         lines = [describe(t, self.today) for t in qs.order_by("planned_date", "position")[:60]]
         note = f"\n({len(self.hidden)} workspace(s) hidden: they use their own private AI endpoint.)" if self.hidden else ""
         return ("\n".join(lines) or "No tasks.") + note
@@ -320,6 +326,14 @@ class Toolbox:
         task = self._save(Task(workspace=ws), data)
         return "Created " + describe(task, self.today)
 
+    def tool_set_repeat(self, task_id, repeat=None):
+        from tasks.recurrence import clean
+
+        task = self._task(task_id)
+        task.recurrence = clean(repeat or None)
+        task.save(update_fields=["recurrence", "updated_at"])
+        return ("Stopped repeating: " if task.recurrence is None else "Now repeats: ") + describe(task, self.today)
+
     def tool_add_tasks(self, lines, workspace="", day="today"):
         from tasks.bulk import create_from_text
 
@@ -329,11 +343,9 @@ class Toolbox:
             return "No tasks found in that list."
         return f"Created {len(created)} task(s) in {ws.name}:\n" + "\n".join(describe(t, self.today) for t in created)
 
-    def tool_update_task(self, task_id, title=None, day=None, status=None, priority=None, repeat=None, estimate_minutes=None):
+    def tool_update_task(self, task_id, title=None, day=None, status=None, priority=None, estimate_minutes=None, **_):
         task = self._task(task_id)
         data = {}
-        if repeat is not None:
-            data["recurrence"] = repeat or None
         if estimate_minutes is not None:
             data["estimate_minutes"] = int(estimate_minutes) or None
         if title:

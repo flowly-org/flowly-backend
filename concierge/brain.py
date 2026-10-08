@@ -1,6 +1,7 @@
 """The concierge: an LLM with task tools, short-term chat history and long-term memory."""
 
 import logging
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -15,7 +16,13 @@ from .tools import Toolbox, describe
 
 log = logging.getLogger("flowly.concierge")
 HISTORY = 12
-MAX_STEPS = 6
+MAX_STEPS = 10
+#: Seconds of tool use per turn before Flo wraps up (under Cloudflare's 100 s limit for the request).
+TIME_BUDGET = 70
+
+
+def clock() -> float:
+    return time.monotonic()
 
 
 def profile_for(user) -> ConciergeProfile:
@@ -118,7 +125,10 @@ def run(user, messages, *, tools=True, max_tokens=2500, channel="web", outbox=No
     toolbox.channel = channel
     if outbox is not None:
         toolbox.outbox = outbox
+    started = clock()
     for _ in range(MAX_STEPS):
+        if clock() - started > TIME_BUDGET:
+            break
         result = chat(provider, messages, tools=Toolbox.openai_tools() if tools else None, max_tokens=max_tokens, user=user)
         message = result["message"]
         calls = message.get("tool_calls") or []
@@ -128,7 +138,10 @@ def run(user, messages, *, tools=True, max_tokens=2500, channel="web", outbox=No
         for call in calls:
             output = toolbox.run(call["function"]["name"], call["function"].get("arguments") or "{}")
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": output[:6000]})
-    return "I got a bit lost doing that. Could you rephrase?"
+    # Out of steps: the tools may well have done the job. Ask for the answer without tools rather than give up.
+    messages.append({"role": "user", "content": "Stop using tools now. In a few lines, tell me what you did and what (if anything) is left."})
+    final = chat(provider, messages, tools=None, max_tokens=max_tokens, user=user)["message"].get("content") or ""
+    return final.strip() or "I got a bit lost doing that. Could you rephrase?"
 
 
 def reply(user, text: str, channel="telegram", outbox=None) -> str:

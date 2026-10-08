@@ -45,6 +45,8 @@ class User(AbstractUser):
     is_bot = models.BooleanField(default=False)
     #: Where the user lives, e.g. "Bologna, Italy" (several separated by ";"). Calendar events elsewhere need preparation.
     home_location = models.CharField(max_length=200, blank=True)
+    #: Last request from the app, the API or Telegram (updated at most every few minutes): for activation stats.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
     github_login = models.CharField(
         max_length=39, blank=True, help_text="GitHub username, used to match issue assignees."
     )
