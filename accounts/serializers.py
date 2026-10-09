@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
+from rest_framework.exceptions import APIException
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 User = get_user_model()
 
@@ -67,6 +69,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value if value in DEFAULT_NAMES else "en"
 
     def validate_email(self, value):
+        from sso.services import requires_sso
+
+        if requires_sso(value):
+            raise serializers.ValidationError("Your organization uses single sign-on: continue with SSO instead.")
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return value.lower()
@@ -100,3 +106,22 @@ class RegisterSerializer(serializers.ModelSerializer):
                 except CodeError as exc:  # e.g. its last use was taken a moment ago
                     raise serializers.ValidationError({"code": str(exc)}) from None
         return user
+
+
+class SsoRequired(APIException):
+    status_code = 400
+    default_code = "sso_required"
+
+
+class LoginSerializer(TokenObtainPairSerializer):
+    """Email + password, except for people whose organization requires single sign-on."""
+
+    def validate(self, attrs):
+        from sso.services import requires_sso
+
+        email = attrs.get(self.username_field, "")
+        user = User.objects.filter(email__iexact=email).first()
+        conn = requires_sso(email, user)
+        if conn is not None:
+            raise SsoRequired({"detail": f"{conn.workspace.name} requires single sign-on: continue with SSO.", "sso": "required"})
+        return super().validate(attrs)
