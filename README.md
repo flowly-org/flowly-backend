@@ -1,13 +1,45 @@
 # Flowly – backend
 
-REST API for Flowly: multi-user, multi-project daily task planning where a day's tasks
-are shown as a kanban board split into **swimlanes** by project, assignee or any tag group you define.
+Flowly is an open-source daily planner: one board for today across every project and workspace, a calendar that
+stays in the background, and Flo, an AI concierge that acts on your tasks (in the app, on Telegram, or from
+ChatGPT/Claude through MCP). This repository is the REST API and its worker.
 
 Django 5.2 · Django REST Framework · SimpleJWT · PostgreSQL · drf-spectacular (OpenAPI)
 
-The Angular client lives in the separate `flowly-frontend` repository.
+| Repository | What |
+|---|---|
+| [flowly-backend](https://github.com/flowly-org/flowly-backend) | API, worker, self-hosting files (this repo) |
+| [flowly-frontend](https://github.com/flowly-org/flowly-frontend) | Angular web app, Android/iOS apps (Capacitor) |
+| [flowly-desktop](https://github.com/flowly-org/flowly-desktop) | Tray time tracker for macOS, Windows, Linux (Tauri) |
+| [flowly-prompt](https://github.com/flowly-org/flowly-prompt) | PROMPT.md: the specification that rebuilds Flowly |
+| [flowly.net](https://flowly.net) | Site; [app.flowly.net](https://app.flowly.net) is the hosted instance |
 
-## Run it
+Licensed under the [GNU AGPL-3.0](LICENSE): use it, change it, host it; if you offer a modified Flowly as a service,
+publish your changes.
+
+## Self-hosting
+
+Everything runs from published images (`ghcr.io/flowly-org/flowly-backend`, `ghcr.io/flowly-org/flowly-frontend`):
+
+```bash
+mkdir flowly && cd flowly
+curl -O https://raw.githubusercontent.com/flowly-org/flowly-backend/main/selfhost/docker-compose.yml
+curl -o .env https://raw.githubusercontent.com/flowly-org/flowly-backend/main/selfhost/.env.example
+# set DJANGO_SECRET_KEY, POSTGRES_PASSWORD and PUBLIC_URL in .env
+docker compose up -d
+```
+
+Open `http://localhost:8080` (or your `PUBLIC_URL` behind an HTTPS reverse proxy), create an account and make it an
+instance admin (the command is at the top of `selfhost/docker-compose.yml`). Then Admin → Settings covers AI keys,
+Telegram, Google/Microsoft calendars, GitHub, Stripe and the rest; values there override the environment.
+
+- **Everything is unlocked**: plans and payments are off unless you set `PLANS_ENABLED=1` (that's what flowly.net
+  does to sell Pro and Enterprise).
+- **AI is optional**: give an OpenRouter key, or point a workspace at any OpenAI-compatible endpoint (a local model
+  server works) under Integrations. Without one, Flowly works fine minus Flo.
+- **Apps**: the Android app and the desktop app connect to any Flowly server, several at once (Server → Add).
+
+## Develop
 
 ```bash
 docker compose up -d --build          # API on http://localhost:8000, Postgres in a volume
@@ -186,3 +218,9 @@ refs, urls task links), `list_tasks`, `list_workspaces`, `create_task`, `update_
 - `workspaces/{ws}/invoices/`: `POST {project?, period_start, period_end, group_by: task|day|entry}`
   builds a draft from unbilled billable time and locks those entries; drafts can be deleted (time is
   released), sent invoices voided (released) or marked paid; `…/csv/` exports.
+
+
+## Contributing
+
+Issues and pull requests are welcome. Run `docker compose run --rm api python manage.py test` before opening a PR;
+CI runs the same suite and publishes the image from `main` and from `v*` tags.

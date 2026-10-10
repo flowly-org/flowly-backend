@@ -10,11 +10,18 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     has_pro = serializers.BooleanField(read_only=True)
     has_pro_plus = serializers.BooleanField(read_only=True)
+    #: Whether this instance sells plans (otherwise there's nothing to upgrade to).
+    plans_enabled = serializers.SerializerMethodField()
+
+    def get_plans_enabled(self, obj):
+        from instance.conf import plans_enabled
+
+        return plans_enabled()
 
     class Meta:
         model = User
         fields = ["id", "email", "full_name", "github_login", "language", "home_location", "is_staff", "plan", "has_pro",
-                  "has_pro_plus", "is_bot", "adhd_mode", "focus", "plan_source", "plan_expires_at"]
+                  "has_pro_plus", "is_bot", "adhd_mode", "focus", "plan_source", "plan_expires_at", "plans_enabled"]
         read_only_fields = ["id", "email", "is_staff", "plan", "has_pro", "has_pro_plus", "is_bot", "plan_source", "plan_expires_at"]
 
     def validate_focus(self, value):

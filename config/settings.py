@@ -131,6 +131,8 @@ CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS", "http://localhost:4200,http://localhost:8080"
 )
+# The Android and iOS apps (Capacitor) can connect to any Flowly server. They send bearer tokens, not cookies.
+CORS_ALLOWED_ORIGINS += [o for o in ("https://localhost", "capacitor://localhost") if o not in CORS_ALLOWED_ORIGINS]
 
 # Public base URL of the app (frontend origin; the API is at <PUBLIC_URL>/api). Used for links in
 # notifications and for GitHub App callbacks. Falls back to the request's origin when empty.
@@ -168,6 +170,10 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 GOOGLE_APP_ID = os.environ.get("GOOGLE_APP_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 SLACK_CLIENT_ID = os.environ.get("SLACK_CLIENT_ID", "")
+#: Off (default): every account and workspace gets every feature, as a self-hosted instance should. On: features follow
+#: the Free / Pro / Pro Plus / Enterprise plans and Stripe billing (flowly.net).
+PLANS_ENABLED = os.environ.get("PLANS_ENABLED", "0") == "1"
+TEST_RUNNER = "config.test_runner.Runner"
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE_PRO_MONTH = os.environ.get("STRIPE_PRICE_PRO_MONTH", "")

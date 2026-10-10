@@ -86,8 +86,15 @@ def runs_used(user) -> int:
     ).count()
 
 
+def monthly_limit():
+    """Runs per month on Pro Plus; no cap on an instance that doesn't sell plans (it pays for its own AI)."""
+    from instance.conf import plans_enabled
+
+    return MONTHLY_RUNS if plans_enabled() else None
+
+
 def quota(user) -> dict:
-    return {"used": runs_used(user), "limit": MONTHLY_RUNS}
+    return {"used": runs_used(user), "limit": monthly_limit()}
 
 
 def provider_for(task):
@@ -385,7 +392,7 @@ def request(task, user, run: bool) -> Delegation:
             active.run = True
             active.save(update_fields=["run"])
         return active
-    if run and runs_used(user) >= MONTHLY_RUNS:
+    if run and monthly_limit() is not None and runs_used(user) >= MONTHLY_RUNS:
         raise ValueError(f"You've used this month's {MONTHLY_RUNS} delegations. They reset on the 1st.")
     if not run and Delegation.objects.filter(user=user, created_at__gte=month_start()).count() >= MONTHLY_ASSESSMENTS:
         raise ValueError("Too many checks this month.")

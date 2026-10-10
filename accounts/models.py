@@ -66,7 +66,9 @@ class User(AbstractUser):
     def has_pro(self):
         from django.utils import timezone
 
-        if self.is_staff:
+        from instance.conf import plans_enabled
+
+        if self.is_staff or not plans_enabled():
             return True
         return self.plan in (self.Plan.PRO, self.Plan.PRO_PLUS) and (
             self.plan_expires_at is None or self.plan_expires_at > timezone.now()
@@ -77,7 +79,9 @@ class User(AbstractUser):
         """Pro Plus: everything in Pro, plus tasks delegated to an AI agent."""
         from django.utils import timezone
 
-        if self.is_staff:
+        from instance.conf import plans_enabled
+
+        if self.is_staff or not plans_enabled():
             return True
         return self.plan == self.Plan.PRO_PLUS and (self.plan_expires_at is None or self.plan_expires_at > timezone.now())
 

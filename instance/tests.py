@@ -114,3 +114,27 @@ class GitHubAppAdminTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertEqual(self.client.delete("/api/admin/github-app/").status_code, 204)
         self.assertFalse(GitHubApp.objects.exists())
+
+
+@override_settings(PLANS_ENABLED=False)
+class PlansOffTests(APITestCase):
+    """A self-hosted instance: no plans, everything unlocked."""
+
+    def test_everyone_gets_everything(self):
+        from delegation import engine
+        from payments import services
+        from workspaces.models import Workspace
+
+        res = self.client.post("/api/auth/register/", {"email": "self@example.com", "password": "s3cure-Passw0rd", "full_name": "S"})
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {res.data['access']}")
+        user = User.objects.get(email="self@example.com")
+        self.assertEqual(user.plan, "free")
+        self.assertTrue(user.has_pro and user.has_pro_plus)
+        self.assertTrue(Workspace.objects.get(memberships__user=user).is_enterprise)
+        me = self.client.get("/api/auth/me/").data
+        self.assertEqual((me["plans_enabled"], me["has_pro_plus"]), (False, True))
+        self.assertFalse(services.enabled())  # no checkout, even with a Stripe key
+        self.assertIsNone(engine.quota(user)["limit"])
+        with override_settings(PLANS_ENABLED=True):
+            self.assertFalse(user.has_pro)
+            self.assertTrue(self.client.get("/api/auth/me/").data["plans_enabled"])

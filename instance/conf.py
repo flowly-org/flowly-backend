@@ -31,6 +31,7 @@ class Spec:
 SPECS = [
     Spec("PUBLIC_URL", "General", "App URL", "Where people open Flowly, e.g. https://app.flowly.net. Used in links and GitHub callbacks.", "url"),
     Spec("API_PUBLIC_URL", "General", "API URL", "Public URL of this API, e.g. https://api.flowly.net. Used for webhooks.", "url"),
+    Spec("PLANS_ENABLED", "General", "Sell plans", "On: features follow the Free, Pro, Pro Plus and Enterprise plans, with Stripe billing. Off: everyone gets everything (self-hosted).", "bool", public=True),
     Spec("OPENROUTER_API_KEY", "AI", "OpenRouter API key", "Platform key used by Pro users' concierge.", secret=True),
     Spec("OPENROUTER_MODEL", "AI", "Default model", "An OpenRouter model id that supports tool calling."),
     Spec("OPENROUTER_AUDIO_MODEL", "AI", "Voice model", "Model that transcribes voice messages (must accept audio). Empty = ~google/gemini-flash-latest."),
@@ -156,3 +157,8 @@ def describe(spec: Spec) -> dict:
         "secret": spec.secret, "choices": list(spec.choices), "value": shown, "is_set": bool(value),
         "source": source(spec.key),
     }
+
+
+def plans_enabled() -> bool:
+    """Whether this instance sells plans; when it doesn't, every account and workspace has every feature."""
+    return bool(get("PLANS_ENABLED"))

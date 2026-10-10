@@ -38,6 +38,11 @@ class Workspace(models.Model):
     def is_enterprise(self) -> bool:
         from django.utils import timezone
 
+        from instance.conf import plans_enabled
+
+        if not plans_enabled():
+            return True
+
         return self.plan == self.Plan.ENTERPRISE and (self.plan_expires_at is None or self.plan_expires_at > timezone.now())
 
 

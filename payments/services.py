@@ -35,7 +35,8 @@ def key() -> str:
 
 
 def enabled() -> bool:
-    return bool(key() and conf.get("STRIPE_PRICE_PRO_MONTH") and conf.get("STRIPE_WEBHOOK_SECRET"))
+    """Payments are on when this instance sells plans and Stripe is set up."""
+    return conf.plans_enabled() and bool(key() and conf.get("STRIPE_PRICE_PRO_MONTH") and conf.get("STRIPE_WEBHOOK_SECRET"))
 
 
 def api(method, path, params=None, **kw):

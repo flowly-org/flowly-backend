@@ -1,0 +1,70 @@
+# Flowly, self-hosted: the API, its worker, Postgres and the web app from the published images.
+#   cp .env.example .env   # then edit it
+#   docker compose up -d
+# Open http://localhost:8080 (or your PUBLIC_URL), create an account, then make yourself an instance admin:
+#   docker compose exec api python manage.py shell -c "from accounts.models import User; User.objects.filter(email='you@example.com').update(is_staff=True, is_superuser=True)"
+
+x-api-env: &api-env
+  DATABASE_URL: postgres://flowly:${POSTGRES_PASSWORD:-flowly}@db:5432/flowly
+  DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+  DJANGO_DEBUG: "0"
+  DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+  CSRF_TRUSTED_ORIGINS: ${PUBLIC_URL:-http://localhost:8080}
+  # The web container proxies /api to the API, so both live on one address.
+  PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+  API_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+  # Off: every account and workspace gets every feature. Turn on only to sell plans with Stripe.
+  PLANS_ENABLED: ${PLANS_ENABLED:-0}
+  # Optional: AI (Flo, photo and notes reading, delegation). Any OpenRouter key, or set a custom
+  # OpenAI-compatible endpoint per workspace in Integrations.
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}
+  # Optional: the Telegram concierge.
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_MODE: polling
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: flowly
+      POSTGRES_USER: flowly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowly}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flowly"]
+      interval: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    image: ghcr.io/flowly-org/flowly-backend:${FLOWLY_VERSION:-latest}
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    image: ghcr.io/flowly-org/flowly-backend:${FLOWLY_VERSION:-latest}
+    entrypoint: ["sh", "-c", "until python manage.py migrate --check >/dev/null 2>&1; do sleep 2; done; exec python manage.py run_worker"]
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: ghcr.io/flowly-org/flowly-frontend:${FLOWLY_VERSION:-latest}
+    environment:
+      API_URL: /api
+      API_UPSTREAM: http://api:8000
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
