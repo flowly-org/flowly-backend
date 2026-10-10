@@ -212,6 +212,51 @@ class SlackTests(IntegrationTestCase):
         self.assertTrue(any(t.startswith("✅ completed") for t in texts), texts)
 
 
+HOOK = "https://discord.com/api/webhooks/123456789012345678/AbC-def_123"
+
+
+class DiscordTests(IntegrationTestCase):
+    def test_rejects_urls_that_arent_discord_webhooks(self):
+        for url in ["https://hooks.slack.com/services/X", "http://discord.com/api/webhooks/1/x", "https://evil.com/api/webhooks/1/x",
+                    "https://discord.com.evil.com/api/webhooks/1/x"]:
+            res = self.client.post(f"{self.base}/integrations/", {"kind": "discord", "name": "d", "config": {"webhook_url": url}}, format="json")
+            self.assertEqual(res.status_code, 400, url)
+        self.integration("discord", {"webhook_url": "https://canary.discord.com/api/v10/webhooks/1/x"})
+
+    def test_project_events_post_embeds_without_pinging_anyone(self):
+        self.integration("discord", {"webhook_url": HOOK, "events": ["task.created", "task.completed", "comment.created"]},
+                         project=self.project["id"])
+        task = self.task(project=self.project["id"], title="@everyone ship *v2*", due_date="2026-12-01")
+        self.task(title="Elsewhere")  # another project: not this channel
+        self.task(project=self.project["id"], title="Secret", visibility="private")  # private: never broadcast
+        self.client.patch(f"{self.base}/tasks/{task['id']}/", {"status": self.status["Done"]}, format="json")
+        self.client.post(f"{self.base}/tasks/{task['id']}/comments/", {"body": "Shipped! @here"}, format="json")
+        http = FakeHttp()
+        with mock.patch("integrations.http.requests.request", http):
+            process_due()
+        bodies = [c["json"] for c in http.calls]
+        self.assertTrue(all(c["url"] == HOOK for c in http.calls))
+        self.assertEqual([b["embeds"][0]["description"].split("\n")[0] for b in bodies],
+                         ["New task", "Done", "**Alice** commented:"])
+        first = bodies[0]
+        self.assertEqual(first["allowed_mentions"], {"parse": []})
+        self.assertEqual(first["username"], "Flowly")
+        embed = first["embeds"][0]
+        self.assertEqual((embed["title"], embed["footer"]["text"], embed["color"]), ("@everyone ship \\*v2\\*", "Team · Site", 0x4F46E5))
+        self.assertIn({"name": "Due", "value": "2026-12-01", "inline": True}, embed["fields"])
+        self.assertIn("> Shipped! @here", bodies[2]["embeds"][0]["description"])
+        self.assertEqual(bodies[1]["embeds"][0]["color"], 0x16A34A)
+
+    def test_ping(self):
+        hook = self.integration("discord", {"webhook_url": HOOK})
+        http = FakeHttp()
+        with mock.patch("integrations.http.requests.request", http):
+            res = self.client.post(f"{self.base}/integrations/{hook['id']}/test/")
+            process_due()
+        self.assertIn(res.status_code, (200, 201, 202), res.data)
+        self.assertTrue(any("connected to this channel" in (c["json"] or {}).get("content", "") for c in http.calls), http.calls)
+
+
 def rsa_pem():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     return key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()

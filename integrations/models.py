@@ -34,6 +34,7 @@ class Integration(models.Model):
         SLACK_BOT = "slack_bot", "Slack app"
         WIKI = "wiki", "Wiki"
         DONETICK = "donetick", "Donetick"
+        DISCORD = "discord", "Discord"
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="integrations")
     project = models.ForeignKey(

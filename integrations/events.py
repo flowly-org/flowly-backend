@@ -13,7 +13,7 @@ TASK_EVENTS = [
     "comment.created",
 ]
 #: Broadcast-style integrations that must not see private tasks.
-PRIVATE_EXCLUDED = ("slack", "outgoing_webhook")
+PRIVATE_EXCLUDED = ("slack", "discord", "outgoing_webhook")
 TRACKED_FIELDS = [
     "title", "description", "status_id", "priority_id", "project_id", "assignee_id",
     "planned_date", "due_date", "tags", "visibility",
