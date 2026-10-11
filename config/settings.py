@@ -173,6 +173,11 @@ SLACK_CLIENT_ID = os.environ.get("SLACK_CLIENT_ID", "")
 #: Off (default): every account and workspace gets every feature, as a self-hosted instance should. On: features follow
 #: the Free / Pro / Pro Plus / Enterprise plans and Stripe billing (flowly.net).
 PLANS_ENABLED = os.environ.get("PLANS_ENABLED", "0") == "1"
+# Real driving times (opt-in per person): OpenStreetMap geocoding and routing.
+NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
+OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")
+#: The profile in OSRM's URL: "driving" on the public server; on-premises installs often use "car".
+OSRM_PROFILE = os.environ.get("OSRM_PROFILE", "driving")
 TEST_RUNNER = "config.test_runner.Runner"
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")

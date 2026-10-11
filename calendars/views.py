@@ -44,6 +44,7 @@ def event_data(event, user, related=False):
         "confirmed": event.confirmed_at is not None,
         "travel": travel.kind(event, user.home_location),
         "travel_minutes": travel.minutes(event, user),
+        "travel_source": travel.source(event, user),
         "leave_at": travel.leave_at(event, user),
         "tasks": [task_data(t) for t in prep.visible_tasks(user).filter(calendar_events=event)],
     }

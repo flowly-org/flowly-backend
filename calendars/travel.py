@@ -1,7 +1,7 @@
 """Getting to appointments: travel time around in-person events, and the briefing Flo sends before you leave.
 
 An event with an address in a home town takes `transfer_minutes` to reach (and to come back from); one in another
-town at least twice that. Online events, events without an address and all-day events need no travel. The time
+town at least twice that. People who opt in get the real driving time instead (calendars.routing), once it's known. Online events, events without an address and all-day events need no travel. The time
 counts as busy in the day's load and in time blocking, and sets the "leave by" time.
 """
 
@@ -24,13 +24,40 @@ def kind(event, home: str) -> str:
     return "away" if prep.is_away(location, home) else ""
 
 
-def minutes(event, user, opts=None) -> int:
-    """Travel time to reach the event (0 when none is needed)."""
+def driving(event, user, opts=None) -> int | None:
+    """The real time by car (plus parking) when the user chose it and it's known for their current home."""
     from accounts.focus import options
 
-    base = (opts or options(user))["transfer_minutes"]
+    from . import routing
+
+    if (opts or options(user))["travel_mode"] != "driving" or event.drive_minutes is None:
+        return None
+    home = routing.origin(user)
+    if not home or event.drive_key != routing.route_key(home, event.location or ""):
+        return None
+    return routing.rounded(event.drive_minutes)
+
+
+def minutes(event, user, opts=None) -> int:
+    """Travel time to reach the event (0 when none is needed): the real drive when known, else the fixed estimate."""
+    from accounts.focus import options
+
+    opts = opts or options(user)
     k = kind(event, user.home_location)
-    return base if k == "in_town" else base * AWAY_FACTOR if k == "away" else 0
+    if not k:
+        return 0
+    real = driving(event, user, opts)
+    if real is not None:
+        return real
+    base = opts["transfer_minutes"]
+    return base if k == "in_town" else base * AWAY_FACTOR
+
+
+def source(event, user, opts=None) -> str:
+    """'driving' (a real route), 'fixed' (the estimate) or '' (no travel)."""
+    if not kind(event, user.home_location):
+        return ""
+    return "driving" if driving(event, user, opts) is not None else "fixed"
 
 
 def leave_at(event, user, opts=None):
@@ -71,7 +98,9 @@ def briefing(event, user, tz) -> tuple[str, str]:
     k = kind(event, user.home_location)
     if travel:
         leave = (event.start - timedelta(minutes=travel)).astimezone(tz)
-        if k == "away":
+        if source(event, user, opts) == "driving":
+            lines.append(f"Leave by {leave:%H:%M} (about {travel} min by car, parking included).")
+        elif k == "away":
             lines.append(f"Out of town: allow at least {travel} min to get there. Leave by {leave:%H:%M}.")
         else:
             lines.append(f"Leave by {leave:%H:%M} (about {travel} min to get there).")

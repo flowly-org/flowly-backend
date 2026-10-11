@@ -22,13 +22,15 @@ DEFAULTS = {
     "block_reminders": True,
     #: Minutes to reach an appointment in your home town (twice that out of town); busy time and "leave by".
     "transfer_minutes": 45,
+    #: "fixed" uses transfer_minutes; "driving" uses the real time by car from home (OpenStreetMap), when known.
+    "travel_mode": "fixed",
     #: Flo's briefing before appointments, on Telegram: off, in_person (events with a place) or all (every timed event).
     "appointment_briefs": "off",
     #: How many minutes before you need to leave the briefing arrives.
     "appointment_lead_minutes": 15,
 }
 #: Settings that take one of a few words.
-CHOICES = {"appointment_briefs": ("off", "in_person", "all")}
+CHOICES = {"appointment_briefs": ("off", "in_person", "all"), "travel_mode": ("fixed", "driving")}
 LIMITS = {"today_limit": (1, 10), "check_in_minutes": (0, 240), "hyperfocus_minutes": (0, 600), "heads_up_minutes": (0, 120), "capacity_minutes": (30, 1440), "transfer_minutes": (0, 240), "appointment_lead_minutes": (0, 180)}
 
 

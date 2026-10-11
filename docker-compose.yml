@@ -19,6 +19,9 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
       PLANS_ENABLED: ${PLANS_ENABLED:-0}
+      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+      OSRM_PROFILE: ${OSRM_PROFILE:-driving}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:8080}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
@@ -48,6 +51,9 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
       PLANS_ENABLED: ${PLANS_ENABLED:-0}
+      NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+      OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+      OSRM_PROFILE: ${OSRM_PROFILE:-driving}
       PUBLIC_URL: ${PUBLIC_URL:-}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}

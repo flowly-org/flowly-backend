@@ -106,6 +106,11 @@ class CheckView(StaffView):
             body = getattr(exc, "body", "")
             return Response({"ok": False, "message": f"{exc} {body[:300] if body else ''}".strip()})
 
+    def check_maps(self):
+        from calendars import routing
+
+        return routing.check()
+
     def check_telegram(self):
         from concierge import telegram
 

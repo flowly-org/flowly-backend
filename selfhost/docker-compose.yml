@@ -19,6 +19,11 @@ x-api-env: &api-env
   # OpenAI-compatible endpoint per workspace in Integrations.
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
   OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/auto}
+  # Optional: real driving times (people opt in under Settings → Calendars). Defaults to the public OpenStreetMap
+  # servers; point these at your own Nominatim and osrm-routed (private addresses are fine) for heavier use.
+  NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
+  OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
+  OSRM_PROFILE: ${OSRM_PROFILE:-driving}
   # Optional: the Telegram concierge.
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   TELEGRAM_MODE: polling

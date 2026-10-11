@@ -82,6 +82,10 @@ class CalendarEvent(models.Model):
     prep = models.CharField(max_length=12, choices=Prep.choices, default=Prep.AUTO)
     #: Set when the user confirmed the event is still on (asked for events away from home).
     confirmed_at = models.DateTimeField(null=True, blank=True)
+    #: Real driving time from home (opt-in, see calendars.routing): minutes, or empty for "no route / not yet".
+    drive_minutes = models.PositiveIntegerField(null=True, blank=True)
+    #: What drive_minutes was computed for (home + location); a change means computing it again.
+    drive_key = models.CharField(max_length=20, blank=True)
     tasks = models.ManyToManyField("tasks.Task", blank=True, related_name="calendar_events")
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -117,3 +121,12 @@ class TimeBlock(models.Model):
 
     class Meta:
         ordering = ["start", "id"]
+
+
+class GeoPlace(models.Model):
+    """A geocoded address (Nominatim), cached because the public server asks for it. Empty lat = not found."""
+
+    query = models.CharField(max_length=500, unique=True)
+    lat = models.FloatField(null=True, blank=True)
+    lon = models.FloatField(null=True, blank=True)
+    checked_at = models.DateTimeField()
