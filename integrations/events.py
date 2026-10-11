@@ -56,12 +56,14 @@ def board_url(workspace_id, planned_date=None):
 
 
 def task_payload(task: Task) -> dict:
-    """Self-contained description of a task for outgoing payloads."""
+    """Self-contained description of a task for outgoing payloads ({{attributes}} filled in)."""
+    from tasks.attributes import for_task, render, rendered_title
+
     tags = list(task.tags.select_related("group"))
     return {
         "id": task.id,
-        "title": task.title,
-        "description": task.description,
+        "title": rendered_title(task),
+        "description": render(task.description, for_task(task)) if "{{" in task.description else task.description,
         "workspace": {"id": task.workspace_id, "name": task.workspace.name},
         "project": {"id": task.project_id, "name": task.project.name} if task.project_id else None,
         "status": {"id": task.status_id, "name": task.status.name, "is_done": task.status.is_done},

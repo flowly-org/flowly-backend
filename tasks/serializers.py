@@ -3,7 +3,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Project, Tag, TagGroup, Task, TaskDependency
+from .models import Attribute, Project, Tag, TagGroup, Task, TaskDependency
 from .services import default_status
 
 User = get_user_model()
@@ -285,7 +285,27 @@ class TaskSerializer(WorkspaceScopedSerializer):
         nxt = getattr(obj, "_next_occurrence", None)
         if nxt is not None:
             data["next_occurrence"] = {"id": nxt.id, "planned_date": nxt.planned_date, "due_date": nxt.due_date}
+        self._attributes(obj, data)
         return data
+
+    def _attributes(self, obj, data):
+        """{{key}} placeholders shown with their values (the raw text in *_template, for editing), @key mentions listed."""
+        from . import attributes
+
+        text = f"{obj.title}\n{obj.description}"
+        if "{{" not in text and "@" not in text:
+            return
+        cache = self.context.setdefault("_attribute_values", attributes.Values())
+        values = cache.for_task(obj.workspace_id, obj.project_id)
+        if not values:
+            return
+        if "{{" in obj.title:
+            data["title_template"], data["title"] = obj.title, attributes.render(obj.title, values, attributes.TITLE_CHARS)
+        if "{{" in obj.description:
+            data["description_template"], data["description"] = obj.description, attributes.render(obj.description, values)
+        used = attributes.mentioned(text, values)
+        if used:
+            data["mentions"] = [{"key": k, "value": v} for k, v in used.items()]
 
     def _apply_status(self, validated_data, instance=None):
         status = validated_data.get("status")
@@ -340,3 +360,35 @@ class TaskSerializer(WorkspaceScopedSerializer):
         elif was_done and not task.status.is_done:
             recurrence.undo_spawn(task)
         return task
+
+
+class AttributeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attribute
+        fields = ["id", "project", "key", "value", "updated_at"]
+        read_only_fields = ["id", "updated_at"]
+
+    def validate_key(self, value):
+        from .attributes import clean_key
+
+        try:
+            return clean_key(value)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from None
+
+    def validate_project(self, value):
+        workspace = self.context["workspace"]
+        if value is not None and value.workspace_id != workspace.id:
+            raise serializers.ValidationError("Pick a project of this workspace.")
+        return value
+
+    def validate(self, attrs):
+        workspace = self.context["workspace"]
+        key = attrs.get("key", getattr(self.instance, "key", None))
+        project = attrs.get("project", getattr(self.instance, "project", None))
+        clash = Attribute.objects.filter(workspace=workspace, project=project, key=key)
+        if self.instance:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError({"key": f"“{key}” already exists here."})
+        return attrs

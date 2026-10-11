@@ -367,3 +367,26 @@ class TaskDependency(models.Model):
             models.UniqueConstraint(fields=["task", "depends_on"], name="unique_task_dependency"),
             models.CheckConstraint(condition=~models.Q(task=models.F("depends_on")), name="no_self_dependency"),
         ]
+
+
+class Attribute(models.Model):
+    """A custom key/value on a workspace or a project ("client_email", "contract", "tone"): context for Flo, and
+    usable in tasks as {{key}} (the value is inserted when the task is shown) or @key (points Flo at it).
+    A project's value overrides the workspace's for the same key."""
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="attributes")
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.CASCADE, related_name="attributes")
+    key = models.CharField(max_length=40)
+    value = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["key", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["workspace", "key"], condition=models.Q(project__isnull=True), name="unique_workspace_attribute"),
+            models.UniqueConstraint(fields=["project", "key"], condition=models.Q(project__isnull=False), name="unique_project_attribute"),
+        ]
+
+    def __str__(self):
+        return self.key

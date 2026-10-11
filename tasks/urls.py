@@ -7,10 +7,11 @@ from django.urls import include, path
 from .discussion import AttachmentViewSet, CommentViewSet
 from .sharing import BulkCreateView, TaskSharesView
 from .templates import TemplateViewSet
-from .views import ProjectViewSet, TagGroupViewSet, TagViewSet, TaskRemindersView, TaskViewSet
+from .views import AttributeViewSet, ProjectViewSet, TagGroupViewSet, TagViewSet, TaskRemindersView, TaskViewSet
 
 router = SimpleRouter()
 router.register("projects", ProjectViewSet, basename="project")
+router.register("attributes", AttributeViewSet, basename="attribute")
 router.register("tag-groups", TagGroupViewSet, basename="tag-group")
 router.register("tags", TagViewSet, basename="tag")
 router.register("templates", TemplateViewSet, basename="template")

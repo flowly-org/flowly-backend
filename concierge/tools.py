@@ -39,7 +39,9 @@ def parse_day(value, today: date):
 
 
 def describe(task: Task, today: date) -> str:
-    bits = [f"#{task.id} {task.title}", f"status={task.status.name}"]
+    from tasks.attributes import rendered_title
+
+    bits = [f"#{task.id} {rendered_title(task)}", f"status={task.status.name}"]
     if task.priority_id:
         bits.append(f"priority={task.priority.name}")
     bits.append(f"workspace={task.workspace.name}")
@@ -63,6 +65,11 @@ def describe(task: Task, today: date) -> str:
     if task.checklist:
         done = sum(1 for i in task.checklist if i.get("done"))
         bits.append(f"checklist {done}/{len(task.checklist)}")
+    if "@" in task.title or "{{" in task.title or "@" in task.description or "{{" in task.description:
+        from tasks.attributes import context
+
+        if used := context(task):
+            bits.append("uses attributes: " + " ".join(used.split())[:400])
     return "; ".join(bits)
 
 
@@ -302,6 +309,13 @@ class Toolbox:
             out.append(
                 f"{ws.name}: projects={projects or 'none'}; statuses={groups.get('status')}; priorities={groups.get('priority')}"
             )
+            # Custom attributes: what the team wrote down for Flo (client, tone, contract…), per workspace and project.
+            from tasks.attributes import summary
+
+            if ws_attrs := summary(ws.id):
+                out.append(f"  attributes of {ws.name}: {ws_attrs}")
+            for p in ws.projects.filter(archived=False, attributes__isnull=False).distinct():
+                out.append(f"  attributes of project {p.name}: {summary(ws.id, p.id)}")
         return "\n".join(out)
 
     def tool_create_task(self, title, workspace="", project="", day="today", priority="", notes="", repeat=None, estimate_minutes=None):

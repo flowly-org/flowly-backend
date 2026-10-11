@@ -342,3 +342,34 @@ class QuickAddView(APIView):
             "created": [{"id": t.id, "ref": t.ref, "title": t.title, "planned_date": t.planned_date, "done": t.status.is_done}
                         for t in tasks],
         }, status=201)
+
+
+class AttributeViewSet(WorkspaceScopedMixin, viewsets.ModelViewSet):
+    """Custom attributes of the workspace (project empty) and its projects (?project=<id>). Members read; owners and
+    admins write."""
+
+    def get_serializer_class(self):
+        from .serializers import AttributeSerializer
+
+        return AttributeSerializer
+
+    def get_queryset(self):
+        qs = self.workspace.attributes.select_related("project")
+        project = self.request.query_params.get("project")
+        if project == "none":
+            qs = qs.filter(project__isnull=True)
+        elif project:
+            qs = qs.filter(project_id=project)
+        return qs
+
+    def perform_create(self, serializer):
+        self.require_manager()
+        serializer.save(workspace=self.workspace)
+
+    def perform_update(self, serializer):
+        self.require_manager()
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        self.require_manager()
+        instance.delete()

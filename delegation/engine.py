@@ -132,13 +132,19 @@ def call(delegation, provider, messages, **kw):
 
 
 def describe_task(task, wiki_budget=0) -> str:
-    lines = [f"Task: {task.title}", f"Workspace: {task.workspace.name}"]
+    from tasks import attributes
+
+    values = attributes.Values()
+    lines = [f"Task: {attributes.rendered_title(task, values)}", f"Workspace: {task.workspace.name}"]
     if task.project_id:
         lines.append(f"Project: {task.project.name}")
     if task.due_date:
         lines.append(f"Due: {task.due_date}")
     if task.description.strip():
-        lines.append(f"Notes:\n{task.description.strip()[:4000]}")
+        notes = attributes.render(task.description, attributes.for_task(task, values))
+        lines.append(f"Notes:\n{notes.strip()[:4000]}")
+    if used := attributes.context(task, values):
+        lines.append(f"Context the team attached (workspace/project attributes this task uses):\n{used[:4000]}")
     comments = list(task.comments.exclude(source="ai").order_by("-created_at")[:8])[::-1]
     if comments:
         lines.append("Discussion:\n" + "\n".join(
