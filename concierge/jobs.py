@@ -26,7 +26,7 @@ def tick():
             log.exception("%s crashed", job.__name__)
     if not telegram.enabled():
         return
-    for job in (send_alerts, poll_updates, send_briefs):
+    for job in (send_alerts, forward_new_tasks, poll_updates, send_briefs):
         try:
             job()
         except DeliveryError as exc:
@@ -75,7 +75,8 @@ def send_block_starts(now=None):
 
 
 def send_alerts(limit=20):
-    pending = Notification.objects.filter(telegram=Notification.Telegram.PENDING).select_related("user__concierge")[:limit]
+    pending = (Notification.objects.filter(telegram=Notification.Telegram.PENDING).exclude(kind=Notification.Kind.NEW_TASK)
+               .select_related("user__concierge")[:limit])
     for n in pending:
         profile = getattr(n.user, "concierge", None)
         if not profile or not profile.telegram_chat_id:
@@ -89,6 +90,58 @@ def send_alerts(limit=20):
                 log.warning("Alert %s failed: %s", n.pk, exc)
                 n.telegram = Notification.Telegram.FAILED
         n.save(update_fields=["telegram"])
+
+
+#: New tasks wait this long before being forwarded, so a burst (a webhook, an import) becomes one message.
+SETTLE = timedelta(seconds=45)
+
+
+def forward_new_tasks(now=None):
+    """Telegram: the new tasks that arrived on people's day, one message per person per burst. Each message joins
+    Flo's conversation, so a reply like "move the second one to tomorrow" has its context."""
+    from django.utils import timezone
+
+    from accounts.models import User
+    from integrations.events import task_payload
+    from tasks.attributes import rendered_title
+
+    now = now or timezone.now()
+    pending = (Notification.objects.filter(kind=Notification.Kind.NEW_TASK, telegram=Notification.Telegram.PENDING)
+               .select_related("task__workspace", "task__project", "task__status"))
+    by_user = {}
+    for n in pending:
+        by_user.setdefault(n.user_id, []).append(n)
+    for user_id, items in by_user.items():
+        if max(n.created_at for n in items) > now - SETTLE:
+            continue  # still arriving: wait for the burst to end
+        user = User.objects.select_related("concierge").get(pk=user_id)
+        profile = getattr(user, "concierge", None)
+        live = [n for n in items if n.task_id and not n.task.status.is_done]
+        if not profile or not profile.telegram_chat_id or not profile.forward_new_tasks or not live:
+            Notification.objects.filter(pk__in=[n.pk for n in items]).update(telegram=Notification.Telegram.NONE)
+            continue
+        lines = []
+        for n in live:
+            t = n.task
+            where = " / ".join(filter(None, [t.workspace.name, t.project.name if t.project_id else None]))
+            due = f", due {t.due_date:%a %d %b}" if t.due_date else ""
+            lines.append(f"#{t.id} {rendered_title(t)} ({where}{due}, from {n.data.get('who') or 'someone'})")
+        if len(lines) == 1:
+            link = task_payload(live[0].task).get("link") or ""
+            text = f"New for today: {lines[0]}" + (f"\n{link}" if link else "")
+        else:
+            text = f"{len(lines)} new tasks for today:\n" + "\n".join(f"• {line}" for line in lines)
+        text += "\nReply to move, finish or ask about them."
+        try:
+            telegram.send_message(profile.telegram_chat_id, text)
+            state = Notification.Telegram.SENT
+            from .models import ConciergeMessage
+
+            ConciergeMessage.objects.create(user=user, role="assistant", content=text[:4000], channel="telegram")
+        except DeliveryError as exc:
+            log.warning("New-task forward to %s failed: %s", user_id, exc)
+            state = Notification.Telegram.FAILED
+        Notification.objects.filter(pk__in=[n.pk for n in items]).update(telegram=state)
 
 
 def poll_updates():

@@ -18,6 +18,8 @@ class ConciergeProfile(models.Model):
     brief_time = models.TimeField(default=time(8, 0), help_text="Local time of the morning brief.")
     morning_brief = models.BooleanField(default=True)
     alerts = models.BooleanField(default=True, help_text="Send urgent changes to Telegram.")
+    #: New tasks that land on today's board during working hours are forwarded on Telegram (batched).
+    forward_new_tasks = models.BooleanField(default=True)
     last_brief_on = models.DateField(null=True, blank=True)
     #: Weekly review: "fri", "sun" or "off", at review_time (local).
     review_day = models.CharField(max_length=3, default="fri")
@@ -70,6 +72,7 @@ class Notification(models.Model):
         SHARED = "shared", "Shared with you"
         FOCUS = "focus", "Focus nudge"
         REMINDER = "reminder", "Reminder"
+        NEW_TASK = "new_task", "New task for today"
 
     class Telegram(models.TextChoices):
         NONE = "none", "Not sent"

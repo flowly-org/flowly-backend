@@ -57,6 +57,7 @@ class ConciergeSettingsSerializer(serializers.Serializer):
     review_time = serializers.TimeField(required=False)
     morning_brief = serializers.BooleanField(required=False)
     alerts = serializers.BooleanField(required=False)
+    forward_new_tasks = serializers.BooleanField(required=False)
     provider = serializers.IntegerField(required=False, allow_null=True)
     personality = serializers.ChoiceField(required=False, choices=list(PERSONALITIES))
     learn = serializers.BooleanField(required=False)
@@ -113,6 +114,7 @@ class ConciergeView(APIView):
                     "review_time": profile.review_time.strftime("%H:%M"),
                     "morning_brief": profile.morning_brief,
                     "alerts": profile.alerts,
+                    "forward_new_tasks": profile.forward_new_tasks,
                     "provider": profile.provider_id,
                     "personality": profile.personality,
                     "learn": profile.learn,

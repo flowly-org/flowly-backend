@@ -70,6 +70,8 @@ def task_changed(before: dict | None, task, *, actor=None, source: str | None = 
                 assignee, Notification.Kind.URGENT, f"Urgent today: {task.title}",
                 f"{who} {verb} it ({_where(task)}).", task=task,
             )
+    if created and lands_today(task, assignee):
+        return new_task(assignee, task, who)
     if assignee_changed:
         when = f" for {task.planned_date:%a %d %b}" if task.planned_date else ""
         return create(
@@ -88,4 +90,39 @@ def comment_added(comment):
     return create(
         task.assignee, Notification.Kind.COMMENT, f"{who} commented on “{task.title}”",
         excerpt[:280] + ("…" if len(excerpt) > 280 else ""), task=task,
+    )
+
+
+def lands_today(task, user) -> bool:
+    """Planned for today (or already overdue), or due today: it's on today's board."""
+    today = local_today(user)
+    return bool((task.planned_date and task.planned_date <= today) or task.due_date == today)
+
+
+def working_now(user) -> bool:
+    """Inside the user's working hours (Settings → Calendars), in their time zone."""
+    from datetime import datetime
+
+    from accounts.focus import options
+
+    profile = ConciergeProfile.objects.filter(user=user).first()
+    try:
+        tz = ZoneInfo(profile.timezone) if profile else timezone.get_current_timezone()
+    except Exception:
+        tz = timezone.get_current_timezone()
+    now = timezone.now().astimezone(tz).time()
+    o = options(user)
+    start, end = (datetime.strptime(o[k], "%H:%M").time() for k in ("day_start", "day_end"))
+    return start <= now < end
+
+
+def new_task(user, task, who):
+    """A task that arrived on today's board. Forwarded on Telegram in batches during working hours (unless switched
+    off); outside them, the morning brief will bring it up."""
+    profile = ConciergeProfile.objects.filter(user=user).first()
+    forward = bool(profile and profile.forward_new_tasks and profile.enabled and profile.telegram_chat_id and user.has_pro
+                   and working_now(user))
+    return create(
+        user, Notification.Kind.NEW_TASK, f"New for today: {task.title}", f"{who} added it ({_where(task)}).", task=task,
+        data={"who": who}, telegram=Notification.Telegram.PENDING if forward else Notification.Telegram.NONE,
     )
