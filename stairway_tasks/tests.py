@@ -182,7 +182,7 @@ class StairwayTests(APITestCase):
         self.assertEqual(self.client.post(f"/api/stairway/callback/{run.token}/", body, content_type="application/json", HTTP_X_STAIRWAY_SIGNATURE=sig).status_code, 204)
         run.refresh_from_db()
         self.assertEqual(run.status, "waiting")
-        self.assertIn("mkdir deliverables", run.waiting_for)
+        self.assertEqual(run.waiting_for, "Bash command\n  mkdir deliverables")
         from concierge.models import Notification
 
         self.assertTrue(Notification.objects.filter(user=self.me, title="Stairway needs your OK on “Competitor analysis”").exists())

@@ -13,6 +13,7 @@ import hashlib
 import hmac
 import io
 import logging
+import re
 import zipfile
 
 from django.core.files.base import ContentFile
@@ -174,7 +175,9 @@ def waiting(run, payload: dict):
 
     if run.status == StairwayRun.Status.STOPPED:
         return
-    run.status, run.waiting_for = StairwayRun.Status.WAITING, str(payload.get("text") or "")[-4000:]
+    # The agent's own Yes/No menu is left out: Allow and Refuse stand in for it.
+    text = re.split(r"\n\s*Do you want to proceed\?", str(payload.get("text") or ""))[0].strip()
+    run.status, run.waiting_for = StairwayRun.Status.WAITING, text[-4000:]
     run.session_url = payload.get("url") or run.session_url
     run.save(update_fields=["status", "waiting_for", "session_url", "updated_at"])
     task = run.task
