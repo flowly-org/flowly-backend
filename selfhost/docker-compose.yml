@@ -15,6 +15,8 @@ x-api-env: &api-env
   API_PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
   # Off: every account and workspace gets every feature. Turn on only to sell plans with Stripe.
   PLANS_ENABLED: ${PLANS_ENABLED:-0}
+  # Attachments (and Stairway deliverables) on this volume; set S3_* in Admin → Settings to use a bucket instead.
+  ATTACHMENTS_DIR: /app/media
   # Optional: AI (Flo, photo and notes reading, delegation). Any OpenRouter key, or set a custom
   # OpenAI-compatible endpoint per workspace in Integrations.
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -46,6 +48,8 @@ services:
   api:
     image: ghcr.io/flowly-org/flowly-backend:${FLOWLY_VERSION:-latest}
     environment: *api-env
+    volumes:
+      - media:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -55,6 +59,8 @@ services:
     image: ghcr.io/flowly-org/flowly-backend:${FLOWLY_VERSION:-latest}
     entrypoint: ["sh", "-c", "until python manage.py migrate --check >/dev/null 2>&1; do sleep 2; done; exec python manage.py run_worker"]
     environment: *api-env
+    volumes:
+      - media:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -73,3 +79,4 @@ services:
 
 volumes:
   pgdata:
+  media:

@@ -16,10 +16,12 @@ _last_brief_check = 0.0
 
 def tick():
     from calendars import routing, travel
+    from stairway_tasks.services import collect_due
 
     from . import focus
 
-    for job in (team_jobs, team_briefs, reflections, focus.tick, travel.tick, routing.tick, send_reminders, weekly_reviews):
+    for job in (team_jobs, team_briefs, reflections, focus.tick, travel.tick, routing.tick, collect_due, send_reminders,
+                weekly_reviews):
         try:
             job()
         except Exception:

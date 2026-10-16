@@ -165,3 +165,27 @@ class PublicConfigView(APIView):
                 "calendar": {"google": bool(conf.get("GOOGLE_CLIENT_ID") and conf.get("GOOGLE_CLIENT_SECRET"))},
             }
         )
+
+
+class FileView(APIView):
+    """A file on the server's own disk, behind a signed link that expires after 5 minutes (see LocalAttachmentStorage)."""
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, token):
+        import os
+
+        from django.core import signing
+        from django.http import FileResponse, Http404
+
+        from .models import FILE_SALT, LocalAttachmentStorage
+
+        try:
+            name = signing.loads(token, salt=FILE_SALT, max_age=300)
+        except signing.BadSignature:
+            raise Http404 from None
+        storage = LocalAttachmentStorage()
+        if not storage.exists(name):
+            raise Http404
+        return FileResponse(storage.open(name), as_attachment=True, filename=os.path.basename(name))

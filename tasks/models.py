@@ -1,7 +1,7 @@
 import uuid
 
 from django.conf import settings
-from django.core.files.storage import Storage, storages
+from django.core.files.storage import FileSystemStorage, Storage, storages
 from django.core.validators import RegexValidator
 from django.db import models
 
@@ -182,6 +182,7 @@ class Comment(models.Model):
         AI = "ai", "AI delegation"
         DONETICK = "donetick", "Donetick"
         IMPORT = "import", "Imported"
+        STAIRWAY = "stairway", "Stairway"
 
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="comments")
     author = models.ForeignKey(
@@ -234,6 +235,8 @@ class AttachmentStorage(Storage):
             return storages["attachments"]
         options = s3_options()
         if options is None:
+            if settings.ATTACHMENTS_DIR:
+                return LocalAttachmentStorage()
             raise RuntimeError("File uploads aren't configured.")
         key = tuple(sorted((k, str(v)) for k, v in options.items()))
         if key not in _s3_cache:
@@ -268,8 +271,27 @@ class AttachmentStorage(Storage):
         return self.backend.get_available_name(name, max_length=max_length)
 
 
+class LocalAttachmentStorage(FileSystemStorage):
+    """Files on the server's own disk (ATTACHMENTS_DIR) when no S3 bucket is set up. Links are signed and expire,
+    like S3's presigned ones, and are served by tasks.discussion.FileView."""
+
+    def __init__(self):
+        super().__init__(location=settings.ATTACHMENTS_DIR)
+
+    def url(self, name):
+        from django.core import signing
+
+        from instance import conf
+
+        token = signing.dumps(name, salt=FILE_SALT)
+        return f"{conf.get('API_PUBLIC_URL') or ''}/api/files/{token}/"
+
+
+FILE_SALT = "flowly.attachment-file"
+
+
 def uploads_enabled():
-    return "attachments" in settings.STORAGES or s3_options() is not None
+    return "attachments" in settings.STORAGES or s3_options() is not None or bool(settings.ATTACHMENTS_DIR)
 
 
 def attachments_storage():

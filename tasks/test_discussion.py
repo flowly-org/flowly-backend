@@ -56,11 +56,26 @@ class DiscussionTests(APITestCase):
         self.assertEqual(self.client.post(f"{self.base}/attachments/", {"kind": "link", "url": "javascript:alert(1)"}, format="json").status_code, 400)
         self.assertEqual(self.client.get(f"{self.base}/attachments/{res.data['id']}/download/").data["url"], "https://example.com/a/b/")
 
+    @override_settings(ATTACHMENTS_DIR="")
     def test_upload_refused_without_bucket(self):
         upload = SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")
         res = self.client.post(f"{self.base}/attachments/", {"kind": "file", "file": upload}, format="multipart")
         self.assertEqual(res.status_code, 400)
         self.assertFalse(self.client.get("/api/config/").data["uploads"]["enabled"])
+
+    def test_upload_to_local_disk_with_signed_link(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as folder, override_settings(ATTACHMENTS_DIR=folder):
+            upload = SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")
+            res = self.client.post(f"{self.base}/attachments/", {"kind": "file", "file": upload}, format="multipart")
+            self.assertEqual(res.status_code, 201, res.data)
+            url = self.client.get(f"{self.base}/attachments/{res.data['id']}/download/").data["url"]
+            self.assertIn("/api/files/", url)
+            self.client.force_authenticate(None)
+            got = self.client.get(url[url.index("/api/files/"):])
+            self.assertEqual(b"".join(got.streaming_content), b"hello")
+            self.assertEqual(self.client.get("/api/files/forged/").status_code, 404)
 
     @override_settings(STORAGES=WITH_BUCKET, ATTACHMENT_MAX_MB=1)
     def test_upload_download_delete(self):

@@ -35,6 +35,7 @@ class Integration(models.Model):
         WIKI = "wiki", "Wiki"
         DONETICK = "donetick", "Donetick"
         DISCORD = "discord", "Discord"
+        STAIRWAY = "stairway", "Stairway"
 
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="integrations")
     project = models.ForeignKey(

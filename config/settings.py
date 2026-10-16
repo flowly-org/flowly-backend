@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "insights",
     "agile",
     "sso",
+    "stairway_tasks",
 ]
 
 MIDDLEWARE = [
@@ -173,6 +174,8 @@ SLACK_CLIENT_ID = os.environ.get("SLACK_CLIENT_ID", "")
 #: Off (default): every account and workspace gets every feature, as a self-hosted instance should. On: features follow
 #: the Free / Pro / Pro Plus / Enterprise plans and Stripe billing (flowly.net).
 PLANS_ENABLED = os.environ.get("PLANS_ENABLED", "0") == "1"
+#: Attachments on the server's disk when no S3 bucket is configured (e.g. /app/media on a volume). Empty = uploads off.
+ATTACHMENTS_DIR = os.environ.get("ATTACHMENTS_DIR", "")
 # Real driving times (opt-in per person): OpenStreetMap geocoding and routing.
 NOMINATIM_URL = os.environ.get("NOMINATIM_URL", "https://nominatim.openstreetmap.org")
 OSRM_URL = os.environ.get("OSRM_URL", "https://router.project-osrm.org")

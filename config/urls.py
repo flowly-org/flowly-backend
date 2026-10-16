@@ -4,6 +4,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from accounts.guide import GuideView
 from concierge.notes import NotesTasksView
+from tasks.discussion import FileView
 from imports.views import ImportView
 from concierge.photo import PhotoTasksView
 from mcpauth import views as oauth
@@ -16,8 +17,10 @@ from tasks.views import MyContextView, DayLoadView, MyTaskListView, QuickAddView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/", include("sso.urls")),  # before accounts: auth/sso/…
+    path("api/", include("sso.urls")),
+    path("api/", include("stairway_tasks.urls")),  # before accounts: auth/sso/…
     path("api/auth/", include("accounts.urls")),
+    path("api/files/<str:token>/", FileView.as_view(), name="attachment-file"),
     path("api/", include("payments.urls")),
     path("api/", include("delegation.urls")),
     path("api/admin/", include("instance.urls")),

@@ -19,6 +19,7 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
       PLANS_ENABLED: ${PLANS_ENABLED:-0}
+      ATTACHMENTS_DIR: ${ATTACHMENTS_DIR:-/app/media}
       NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
       OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
       OSRM_PROFILE: ${OSRM_PROFILE:-driving}
@@ -35,6 +36,8 @@ services:
       TELEGRAM_MODE: ${TELEGRAM_MODE:-polling}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
     restart: unless-stopped
+    volumes:
+      - media:/app/media
     ports:
       - "${API_BIND:-0.0.0.0}:${API_PORT:-8000}:8000"
     depends_on:
@@ -51,6 +54,7 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-}
       PLANS_ENABLED: ${PLANS_ENABLED:-0}
+      ATTACHMENTS_DIR: ${ATTACHMENTS_DIR:-/app/media}
       NOMINATIM_URL: ${NOMINATIM_URL:-https://nominatim.openstreetmap.org}
       OSRM_URL: ${OSRM_URL:-https://router.project-osrm.org}
       OSRM_PROFILE: ${OSRM_PROFILE:-driving}
@@ -64,6 +68,9 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - media:/app/media
 
 volumes:
   pgdata:
+  media:

@@ -127,6 +127,7 @@ manage them at `workspaces/{ws}/integrations/` (CRUD, plus `test/`, `rotate-secr
 | `slack` | out | Posts task events to a channel through a Slack incoming-webhook URL. |
 | `outgoing_webhook` | out | POSTs JSON to your URL; header `X-Flowly-Signature: sha256=<HMAC-SHA256(secret, body)>`. |
 | `incoming_webhook` | in | `POST /api/hooks/<token>/` with `{external_id?, title, description, status, priority, tags[], assignee (email), planned_date, due_date, url}`; same `external_id` updates the task. |
+| `stairway` | both | Hands a task to an AI agent (Claude Code, opencode or crush) on a [Stairway](https://github.com/sirmmo/stairway) server: `POST …/tasks/{id}/stairway/` creates an experiment from the task (notes, checklist, attributes, comments, links). Stairway calls back signed (`X-Stairway-Signature`) when the agent replies or asks for permission; replies become comments, files the agent leaves in `./deliverables/` become the task's attachments, and people allow or refuse requests from the task (`…/stairway/{run}/approve|deny|prompt|stop/`). Config: `url`, `agent`, `model`, `permission_mode`, `instructions`; secret = the Stairway token. |
 | `email` | in | Mail to `<token>@EMAIL_INBOUND_DOMAIN` becomes a task (members only by default). Point your provider at `POST /api/integrations/email/inbound/` (JSON `{to, from, subject, text, message_id}`, Mailgun, SendGrid or Postmark formats; optional `?key=EMAIL_INBOUND_KEY`). |
 
 Task changes (`task.created/updated/status_changed/completed/assigned/deleted`) are written to the
@@ -153,6 +154,7 @@ GitHub issues sync both ways. `GET /api/config/` tells the client which sources 
 | Setting | Enables |
 |---|---|
 | `S3_BUCKET`, `S3_ENDPOINT_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_REGION`, `S3_ADDRESSING_STYLE` | File uploads to any S3-compatible bucket (private; downloads use 5-minute signed URLs, so the endpoint must be reachable by browsers). `ATTACHMENT_MAX_MB` (default 25). |
+| `ATTACHMENTS_DIR` | File uploads to the server's own disk when no bucket is set (the compose files use `/app/media` on a volume); downloads use 5-minute signed links served by the API. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_API_KEY`, `GOOGLE_APP_ID` | Google Drive picker (OAuth client of type *Web*, authorised JS origin = your site; Picker API enabled; app id = project number). Scope `drive.file`; Flowly stores only links. |
 | `MICROSOFT_CLIENT_ID` | OneDrive / SharePoint picker (Entra app registration, SPA platform with your site's origin + `/` as redirect URI). |
 
